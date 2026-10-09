@@ -1,0 +1,28 @@
+{
+  "name": "napcat-plugin-group-manager",
+  "plugin": "群管助手",
+  "version": "0.1.0",
+  "description": "NapCat 群管理插件合集：手动禁言/踢人/解禁/撤回、随机禁言、黑历史、新人禁言、静默成员检查、加群审核、撤回统计。支持一条配置绑定多个群，WebUI 可视化配置。",
+  "author": "Dmocken",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "build": "vite build && node scripts/pack.mjs",
+    "typecheck": "tsc --noEmit",
+    "deploy": "npm run build && node scripts/pack.mjs --deploy"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  },
+  "napcat": {
+    "tags": [
+      "群管",
+      "工具"
+    ],
+    "minVersion": "4.14.0",
+    "homepage": ""
+  }
+}
