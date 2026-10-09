@@ -5,6 +5,8 @@
  *   - 有权限：sm @用户 / smplus @用户 → 对每个被 @ 的人随机禁言
  *   - 无权限：sm / smplus → 禁言自己
  * Bot 管理员不会被 sm。
+ *
+ * 提示文案可在 WebUI 的「随机禁言 → 提示文案」里改。
  */
 
 import type { CommandContext } from '../types';
@@ -12,10 +14,17 @@ import { callAction, sendGroup } from '../core/messages';
 import { checkFeatureAccess, isGlobalAdmin } from '../core/permission';
 import { registerCommand } from '../core/router';
 import { logError } from '../core/state';
+import { paramText } from '../core/texts';
 import { formatClock, paramNumber, randomInt } from '../core/utils';
 
 /** 随机禁言并对群里播报 */
-async function banUser(c: CommandContext, targetId: string, min: number, max: number): Promise<void> {
+async function banUser(
+    c: CommandContext,
+    params: Record<string, unknown>,
+    targetId: string,
+    min: number,
+    max: number,
+): Promise<void> {
     const muteSeconds = randomInt(min, max);
     try {
         await callAction('set_group_ban', {
@@ -27,12 +36,19 @@ async function banUser(c: CommandContext, targetId: string, min: number, max: nu
         const endTime = new Date(Date.now() + muteSeconds * 1000);
         await sendGroup(
             c.groupId,
-            `已将小杂鱼${targetId}随机禁言${muteSeconds}秒♥\n` +
-                `乖乖呆在我的小黑屋里面到 ${formatClock(endTime)}吧！`,
+            paramText(
+                params,
+                'sm_success',
+                '已将小杂鱼{user}随机禁言{seconds}秒♥\n乖乖呆在我的小黑屋里面到 {clock}吧！',
+                { user: targetId, seconds: muteSeconds, clock: formatClock(endTime) },
+            ),
         );
     } catch (e) {
         logError('[群管助手] 随机禁言失败:', e);
-        await sendGroup(c.groupId, `禁言失败，你不会认真一点吗？ ${String(e)}`);
+        await sendGroup(
+            c.groupId,
+            paramText(params, 'sm_failed', '禁言失败，你不会认真一点吗？ {error}', { error: String(e) }),
+        );
     }
 }
 
@@ -50,22 +66,22 @@ async function handleRandomBan(c: CommandContext, plus: boolean): Promise<void> 
     // 无权限：只有裸命令（不含 @）时才禁言自己
     if (!access.hasPermission) {
         if (c.plainText.trim().toLowerCase() === c.command) {
-            await banUser(c, String(c.userId), min, max);
+            await banUser(c, params, String(c.userId), min, max);
         }
         return;
     }
 
     if (!c.atTargets.length) {
-        await sendGroup(c.groupId, '请@要禁言的用户');
+        await sendGroup(c.groupId, paramText(params, 'sm_no_target', '请@要禁言的用户'));
         return;
     }
 
     for (const target of c.atTargets) {
         if (isGlobalAdmin(target)) {
-            await sendGroup(c.groupId, 'sm谁？你sm一个试试看？');
+            await sendGroup(c.groupId, paramText(params, 'sm_admin_deny', 'sm谁？你sm一个试试看？'));
             continue;
         }
-        await banUser(c, target, min, max);
+        await banUser(c, params, target, min, max);
     }
 }
 

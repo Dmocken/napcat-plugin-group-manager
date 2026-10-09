@@ -14,6 +14,7 @@ import { canToggle } from '../core/permission';
 import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logDebug, logError, logWarn } from '../core/state';
+import { paramText } from '../core/texts';
 import { formatDuration, paramNumber, paramString } from '../core/utils';
 
 registerNotice('group_increase', 'newban', async (ctx) => {
@@ -76,29 +77,37 @@ registerCommand({
     description: 'newban open / newban close — 开启或关闭本群新人禁言',
     handler: async (c) => {
         const arg = (c.argv[0] ?? '').toLowerCase();
-        const current = getFeatureSettings(c.groupId, 'newban').enabled;
+        const settings = getFeatureSettings(c.groupId, 'newban');
+        const params = settings.params;
+        const current = settings.enabled;
 
         if (arg === 'open') {
             if (current) {
-                await sendGroup(c.groupId, '当前群的新人禁言已经是开启状态');
+                await sendGroup(c.groupId, paramText(params, 'newban_on_echo', '当前群的新人禁言已经是开启状态'));
                 return;
             }
             setFeatureEnabled(c.groupId, 'newban', true);
-            await sendGroup(c.groupId, `已开启群 ${c.groupId} 的新人禁言`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'newban_opened', '已开启群 {group} 的新人禁言', { group: c.groupId }),
+            );
             return;
         }
 
         if (arg === 'close') {
             if (!current) {
-                await sendGroup(c.groupId, '当前群的新人禁言已经是关闭状态');
+                await sendGroup(c.groupId, paramText(params, 'newban_off_echo', '当前群的新人禁言已经是关闭状态'));
                 return;
             }
             setFeatureEnabled(c.groupId, 'newban', false);
-            await sendGroup(c.groupId, `已关闭群 ${c.groupId} 的新人禁言`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'newban_closed', '已关闭群 {group} 的新人禁言', { group: c.groupId }),
+            );
             return;
         }
 
-        await sendGroup(c.groupId, '用法：newban open 或 newban close');
+        await sendGroup(c.groupId, paramText(params, 'newban_usage', '用法：newban open 或 newban close'));
     },
 });
 

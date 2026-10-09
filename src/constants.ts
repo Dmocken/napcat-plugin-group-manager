@@ -5,7 +5,15 @@
  * 保证迁移后行为一致（见 nonebot/ 下各插件的「配置区」）。
  */
 
-import type { FeatureKey, FeatureMeta, FeatureSettings, GlobalConfig, GroupProfile } from './types';
+import type {
+    FeatureKey,
+    FeatureMeta,
+    FeatureSettings,
+    GlobalConfig,
+    GroupProfile,
+    ParamMeta,
+    ParamType,
+} from './types';
 
 export const PLUGIN_ID = 'napcat-plugin-group-manager';
 export const PLUGIN_DISPLAY_NAME = '群管助手';
@@ -58,6 +66,140 @@ export const DEFAULT_JUDGE_WORDS = {
     double_negation: ['没说', '没有', '不是', '并非'],
 };
 
+/* ---------------- 可自定义提示文案 ---------------- */
+
+/** 文案参数统一构造：默认单行输入，长文本用 textarea */
+function textParam(key: string, label: string, def: string, type: ParamType = 'text'): ParamMeta {
+    return { key, label, type, default: def, group: '提示文案' };
+}
+
+/**
+ * 各功能的提示文案参数（WebUI 里按「提示文案」分组展示，默认收起）
+ *
+ * 占位符：{user} 目标 QQ、{time} 时长、{seconds} 秒数、{clock} 时间点、
+ *        {id} 编号、{content} 正文、{group} 群号、{count} 次数、{error} 错误信息
+ */
+export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
+    ban: [
+        textParam('ban_no_target', 'ban 未 @ 用户', '你要把谁关进小黑屋？'),
+        textParam(
+            'ban_bad_format',
+            'ban 缺少时长/单位',
+            '格式错误！正确格式：ban @用户 时长 单位（秒/分/时/天），中间都有空格哦',
+        ),
+        textParam(
+            'ban_bad_duration',
+            'ban 时长无法解析',
+            '格式输错啦！正确格式：ban @用户 时长 单位（秒/分/时/天），中间都有空格哦',
+        ),
+        textParam('ban_success', '禁言成功回执', '已成功把用户 {user} 禁言{time}'),
+        textParam('ban_failed', '禁言失败', '禁言失败：{error}'),
+        textParam('ban_maybe_failed', '禁言无回执提示', '禁言操作可能失败，请检查机器人权限'),
+        textParam('kick_no_target', 'kick 未 @ 用户', '你要踢谁？'),
+        textParam('kick_success', '踢人成功', '{user} 消失啦~'),
+        textParam('kick_failed', '踢人失败', '踢人失败：{error}'),
+        textParam('unban_no_target', 'unban 未 @ 用户', '你想把谁放出小黑屋？'),
+        textParam('unban_success', '解禁成功', '已将 {user} 放出小黑屋'),
+        textParam('unban_failed', '解禁失败', '解禁失败：{error}'),
+        textParam('recall_no_target', '撤回未引用消息', '你要撤回哪条消息？'),
+        textParam('recall_failed', '撤回失败', '撤回失败：{error}'),
+        textParam('kick_admin_warn', '踢到 Bot 管理员时吐槽', '铸币你要不看看你在踢谁？'),
+    ],
+    random_ban: [
+        textParam('sm_no_target', 'sm 未 @ 用户', '请@要禁言的用户'),
+        textParam('sm_admin_deny', 'sm 目标是 Bot 管理员', 'sm谁？你sm一个试试看？'),
+        textParam(
+            'sm_success',
+            '随机禁言成功',
+            '已将小杂鱼{user}随机禁言{seconds}秒♥\n乖乖呆在我的小黑屋里面到 {clock}吧！',
+            'textarea',
+        ),
+        textParam('sm_failed', '随机禁言失败', '禁言失败，你不会认真一点吗？ {error}'),
+    ],
+    black: [
+        textParam('black_no_reply', '入典未引用消息', '你想让我记住什么啊？'),
+        textParam('black_unsupported', '入典消息类型不支持', '这种消息我还记不住啦！'),
+        textParam('black_fetch_failed', '入典取消息失败', '我拿不到那条消息，记不住啦！'),
+        textParam('black_added', '入典成功', '我记住这b的黑历史啦！编号为：{id}'),
+        textParam('black_empty', '还没有任何黑历史', '还没有记录任何黑历史呢'),
+        textParam('black_user_empty', '该用户没有黑历史', '这个人还没有黑历史呢~'),
+        textParam('black_bad_id', '查询编号非法', '你写的这玩意儿是编号吗？！'),
+        textParam('black_id_not_found', '查询编号不存在', '没有找到编号为 {id} 的黑历史！'),
+        textParam('black_found', '查询结果', '找到{user}的黑历史(ID:{id})：\n{content}', 'textarea'),
+        textParam('black_del_no_arg', '删除未给编号', '删哪个？'),
+        textParam('black_del_bad_id', '删除编号非法', '我数数是用的数字数的！'),
+        textParam('black_del_not_found', '删除的编号不存在', '我这儿都没有编号为 {id} 的黑历史啊！'),
+        textParam('black_deleted', '删除成功', '我忘掉编号为 {id} 的黑历史了！'),
+    ],
+    newban: [
+        textParam('newban_on_echo', '已开启时提示', '当前群的新人禁言已经是开启状态'),
+        textParam('newban_opened', '开启成功', '已开启群 {group} 的新人禁言'),
+        textParam('newban_off_echo', '已关闭时提示', '当前群的新人禁言已经是关闭状态'),
+        textParam('newban_closed', '关闭成功', '已关闭群 {group} 的新人禁言'),
+        textParam('newban_usage', '用法提示', '用法：newban open 或 newban close'),
+    ],
+    check_silent: [
+        textParam('check_no_permission', '群内权限不足', '⛔ 该功能仅限群主或管理员使用。'),
+        textParam('check_private_only', '私聊权限不足', '⛔ 私聊指令仅限机器人主人使用。'),
+        textParam('check_user_usage', 'check user 参数错误', '用法：check user [QQ号]'),
+        textParam('check_group_required', '私聊未给群号', '请指定群号，例如：check group 123456'),
+        textParam(
+            'check_usage_group',
+            '群聊用法说明',
+            '用法：\n' +
+                '  check — 检查并记录入群超过 N 天且从未发言的成员\n' +
+                '  check kick — 一键踢出已记录的静默成员\n' +
+                '  check kick [原因] — 踢出前私聊发送原因\n' +
+                '  check user [QQ号] — 查看某成员的入群时间和发言时间\n' +
+                '  check debug — 调试：查看 API 返回的原始成员数据',
+            'textarea',
+        ),
+        textParam(
+            'check_usage_private',
+            '私聊用法说明',
+            '私聊用法：\n' +
+                '  check group [群号] — 检查指定群\n' +
+                '  check group [群号] kick — 一键踢出已记录的静默成员\n' +
+                '  check group [群号] kick [原因] — 踢出前私聊通知\n' +
+                '  check group [群号] debug — 调试：查看 API 原始数据',
+            'textarea',
+        ),
+    ],
+    join_verify: [
+        textParam('join_on_echo', '已开启时提示', '当前群的加群自动审批已经是开启状态'),
+        textParam('join_opened', '开启成功', '已开启群 {group} 的加群自动审批'),
+        textParam('join_off_echo', '已关闭时提示', '当前群的加群自动审批已经是关闭状态'),
+        textParam('join_closed', '关闭成功', '已关闭群 {group} 的加群自动审批'),
+        textParam('join_usage', '用法提示', '用法：join open 或 join close'),
+    ],
+    recall_stats: [
+        textParam('recall_on_echo', '已开启时提示', '当前群的撤回消息统计已经是开启状态'),
+        textParam('recall_opened', '开启成功', '已开启群 {group} 的撤回消息统计'),
+        textParam('recall_off_echo', '已关闭时提示', '当前群的撤回消息统计已经是关闭状态'),
+        textParam('recall_closed', '关闭成功', '已关闭群 {group} 的撤回消息统计'),
+        textParam('recall_usage_group', '群聊用法提示', '群聊用法：recall open 或 recall close'),
+        textParam(
+            'recall_private_usage',
+            '私聊用法提示',
+            '私聊用法：recall <群号> <QQ号>\n例如：recall 123456789 987654321',
+            'textarea',
+        ),
+        textParam('recall_bad_number', '群号/QQ 号格式错误', '群号或 QQ 号格式错误，请输入数字'),
+        textParam(
+            'recall_verify_failed',
+            '私聊校验成员身份失败',
+            '无法验证你的群成员身份，请确认群号正确且你是该群管理员',
+        ),
+        textParam(
+            'recall_no_private_permission',
+            '私聊查询权限不足',
+            '你没有权限执行此操作（仅该群群主、群管理或 Bot 主人可用）',
+        ),
+        textParam('recall_group_disabled', '目标群未开启统计', '该群未开启撤回消息统计，请先在群内使用 recall open 开启'),
+        textParam('recall_no_record', '没有撤回记录', '用户 {user} 在群 {group} 没有被撤回的记录'),
+    ],
+};
+
 /** 功能元信息（WebUI 依据此表渲染） */
 export const FEATURES: FeatureMeta[] = [
     {
@@ -66,7 +208,7 @@ export const FEATURES: FeatureMeta[] = [
         usage: 'ban @用户 时长 单位（秒/分/时/天）\nkick @用户\nunban @用户\n撤回消息（引用要撤回的消息）',
         block: false,
         implemented: true,
-        params: [],
+        params: [...(FEATURE_TEXT_PARAMS.ban ?? [])],
     },
     {
         key: 'random_ban',
@@ -79,6 +221,7 @@ export const FEATURES: FeatureMeta[] = [
             { key: 'sm_max', label: 'sm 最长时长（秒）', type: 'number', default: 3600 },
             { key: 'smplus_min', label: 'smplus 最短时长（秒）', type: 'number', default: 1 },
             { key: 'smplus_max', label: 'smplus 最长时长（秒）', type: 'number', default: 28800 },
+            ...(FEATURE_TEXT_PARAMS.random_ban ?? []),
         ],
     },
     {
@@ -87,7 +230,7 @@ export const FEATURES: FeatureMeta[] = [
         usage: '入典（引用一条纯文字消息）\n查看黑历史 [编号 / @某人]\n删除黑历史 编号',
         block: false,
         implemented: true,
-        params: [],
+        params: [...(FEATURE_TEXT_PARAMS.black ?? [])],
     },
     {
         key: 'newban',
@@ -103,6 +246,7 @@ export const FEATURES: FeatureMeta[] = [
                 type: 'textarea',
                 default: DEFAULT_NEWBAN_WELCOME,
                 hint: '{time} 会替换为人类可读时长；{image=/assets/tip.png} 会替换为图片',
+                group: '提示文案',
             },
             {
                 key: 'remute_text',
@@ -110,7 +254,9 @@ export const FEATURES: FeatureMeta[] = [
                 type: 'textarea',
                 default: DEFAULT_NEWBAN_REMUTE,
                 hint: '同上，支持 {time} 与 {image=...}',
+                group: '提示文案',
             },
+            ...(FEATURE_TEXT_PARAMS.newban ?? []),
         ],
     },
     {
@@ -129,6 +275,7 @@ export const FEATURES: FeatureMeta[] = [
                 hint: '1 = 视为符合条件（保守筛查），0 = 跳过',
             },
             { key: 'kick_reason', label: '默认踢出原因（可留空）', type: 'text', default: '' },
+            ...(FEATURE_TEXT_PARAMS.check_silent ?? []),
         ],
     },
     {
@@ -141,8 +288,21 @@ export const FEATURES: FeatureMeta[] = [
             { key: 'qq_level_threshold', label: 'QQ 等级阈值', type: 'number', default: 10, hint: '等级 ≥ 阈值立刻通过，否则延迟后通过' },
             { key: 'delay_seconds', label: '低等级延迟通过秒数', type: 'number', default: 1800 },
             { key: 'max_group_size', label: '群人数上限', type: 'number', default: 2000, hint: '达到上限直接拒绝，0 表示不检查' },
-            { key: 'duplicate_reason', label: '重复加群拒绝理由', type: 'text', default: '您已加入其它官方群，请勿重复加群！' },
-            { key: 'group_full_reason', label: '群满拒绝理由', type: 'text', default: '群聊已满，如有需要可以先加入Phira官方QQ频道' },
+            {
+                key: 'duplicate_reason',
+                label: '重复加群拒绝理由',
+                type: 'text',
+                default: '您已加入其它官方群，请勿重复加群！',
+                group: '提示文案',
+            },
+            {
+                key: 'group_full_reason',
+                label: '群满拒绝理由',
+                type: 'text',
+                default: '群聊已满，如有需要可以先加入Phira官方QQ频道',
+                group: '提示文案',
+            },
+            ...(FEATURE_TEXT_PARAMS.join_verify ?? []),
             {
                 key: 'words',
                 label: '语义判断词表',
@@ -172,7 +332,9 @@ export const FEATURES: FeatureMeta[] = [
                 type: 'text',
                 default: '您已被撤回消息 {count} 次，请注意言行，遵守群规！',
                 hint: '{count} 会替换为次数',
+                group: '提示文案',
             },
+            ...(FEATURE_TEXT_PARAMS.recall_stats ?? []),
         ],
     },
 ];

@@ -14,6 +14,7 @@ import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logDebug, logError } from '../core/state';
 import { readJson, writeJson } from '../core/store';
+import { paramText } from '../core/texts';
 import { paramNumberList, paramString } from '../core/utils';
 
 const DATA_FILE = 'recall_records.json';
@@ -158,50 +159,82 @@ registerCommand({
 
         /* ---- 群聊：开关 ---- */
         if (isGroup) {
+            const settings = getFeatureSettings(c.groupId, 'recall_stats');
+            const params = settings.params;
+
             if (!canToggle(c.groupId, c.userId, c.role, 'recall_stats')) {
                 await sendGroup(c.groupId, MESSAGES.noPermission);
                 return;
             }
 
             const arg = (c.argv[0] ?? '').toLowerCase();
-            const enabled = getFeatureSettings(c.groupId, 'recall_stats').enabled;
+            const enabled = settings.enabled;
 
             if (arg === 'open') {
                 if (enabled) {
-                    await sendGroup(c.groupId, '当前群的撤回消息统计已经是开启状态');
+                    await sendGroup(
+                        c.groupId,
+                        paramText(params, 'recall_on_echo', '当前群的撤回消息统计已经是开启状态'),
+                    );
                     return;
                 }
                 setFeatureEnabled(c.groupId, 'recall_stats', true);
-                await sendGroup(c.groupId, `已开启群 ${c.groupId} 的撤回消息统计`);
+                await sendGroup(
+                    c.groupId,
+                    paramText(params, 'recall_opened', '已开启群 {group} 的撤回消息统计', { group: c.groupId }),
+                );
                 return;
             }
 
             if (arg === 'close') {
                 if (!enabled) {
-                    await sendGroup(c.groupId, '当前群的撤回消息统计已经是关闭状态');
+                    await sendGroup(
+                        c.groupId,
+                        paramText(params, 'recall_off_echo', '当前群的撤回消息统计已经是关闭状态'),
+                    );
                     return;
                 }
                 setFeatureEnabled(c.groupId, 'recall_stats', false);
-                await sendGroup(c.groupId, `已关闭群 ${c.groupId} 的撤回消息统计`);
+                await sendGroup(
+                    c.groupId,
+                    paramText(params, 'recall_closed', '已关闭群 {group} 的撤回消息统计', { group: c.groupId }),
+                );
                 return;
             }
 
-            await sendGroup(c.groupId, '群聊用法：recall open 或 recall close');
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'recall_usage_group', '群聊用法：recall open 或 recall close'),
+            );
             return;
         }
 
         /* ---- 私聊：查询 ---- */
+        const fallbackParams = getFeatureSettings(0, 'recall_stats').params;
+
         if (c.argv.length < 2) {
-            await sendPrivate(c.userId, '私聊用法：recall <群号> <QQ号>\n例如：recall 123456789 987654321');
+            await sendPrivate(
+                c.userId,
+                paramText(
+                    fallbackParams,
+                    'recall_private_usage',
+                    '私聊用法：recall <群号> <QQ号>\n例如：recall 123456789 987654321',
+                ),
+            );
             return;
         }
 
         const groupId = Number(c.argv[0]);
         const targetId = Number(c.argv[1]);
         if (!Number.isFinite(groupId) || !Number.isFinite(targetId)) {
-            await sendPrivate(c.userId, '群号或 QQ 号格式错误，请输入数字');
+            await sendPrivate(
+                c.userId,
+                paramText(fallbackParams, 'recall_bad_number', '群号或 QQ 号格式错误，请输入数字'),
+            );
             return;
         }
+
+        const params = getFeatureSettings(groupId, 'recall_stats').params;
 
         // 权限：Bot 管理员 或 该群群主/管理员
         if (!isGlobalAdmin(c.userId)) {
@@ -214,24 +247,47 @@ registerCommand({
                 });
                 role = info?.role ?? 'member';
             } catch {
-                await sendPrivate(c.userId, '无法验证你的群成员身份，请确认群号正确且你是该群管理员');
+                await sendPrivate(
+                    c.userId,
+                    paramText(
+                        params,
+                        'recall_verify_failed',
+                        '无法验证你的群成员身份，请确认群号正确且你是该群管理员',
+                    ),
+                );
                 return;
             }
             if (role !== 'owner' && role !== 'admin') {
-                await sendPrivate(c.userId, '你没有权限执行此操作（仅该群群主、群管理或 Bot 主人可用）');
+                await sendPrivate(
+                    c.userId,
+                    paramText(
+                        params,
+                        'recall_no_private_permission',
+                        '你没有权限执行此操作（仅该群群主、群管理或 Bot 主人可用）',
+                    ),
+                );
                 return;
             }
         }
 
         if (!getFeatureSettings(groupId, 'recall_stats').enabled) {
-            await sendPrivate(c.userId, '该群未开启撤回消息统计，请先在群内使用 recall open 开启');
+            await sendPrivate(
+                c.userId,
+                paramText(params, 'recall_group_disabled', '该群未开启撤回消息统计，请先在群内使用 recall open 开启'),
+            );
             return;
         }
 
         const data = loadRecords();
         const userData = getUserRecords(data, groupId, targetId);
         if (!userData || !userData.count) {
-            await sendPrivate(c.userId, `用户 ${targetId} 在群 ${groupId} 没有被撤回的记录`);
+            await sendPrivate(
+                c.userId,
+                paramText(params, 'recall_no_record', '用户 {user} 在群 {group} 没有被撤回的记录', {
+                    user: targetId,
+                    group: groupId,
+                }),
+            );
             return;
         }
 

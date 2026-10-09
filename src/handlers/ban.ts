@@ -3,14 +3,18 @@
  *
  * 命令：ban @用户 时长 单位（秒/分/时/天）、kick @用户、unban @用户、撤回消息（引用）
  * 事件：group_ban（写入/清除禁言记录 + 禁言成功回执）、group_decrease（踢人保护）
+ *
+ * 所有提示文案都可以在 WebUI 的「手动禁言 / 踢人 / 解禁 / 撤回 → 提示文案」里改。
  */
 
 import { addBanRecord, cleanExpiredBanRecords, removeBanRecord } from '../core/ban-records';
 import { registerNotice } from '../core/events';
 import { callAction, replyIdOf, sendGroup } from '../core/messages';
 import { isGlobalAdmin } from '../core/permission';
+import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logDebug, logError } from '../core/state';
+import { paramText } from '../core/texts';
 import { schedule } from '../core/timers';
 import { parseDuration } from '../core/utils';
 
@@ -19,26 +23,43 @@ const pendingBans = new Map<string, { timeStr: string; unitStr: string }>();
 
 const banKey = (groupId: number, userId: string | number) => `${groupId}_${userId}`;
 
+const banParams = (groupId: number) => getFeatureSettings(groupId, 'ban').params;
+
 registerCommand({
     name: 'ban',
     feature: 'ban',
     description: 'ban @用户 时长 单位（秒/分/时/天）— 禁言指定成员',
     handler: async (c) => {
+        const params = banParams(c.groupId);
         const target = c.atTargets[0];
         if (!target) {
-            await sendGroup(c.groupId, '你要把谁关进小黑屋？');
+            await sendGroup(c.groupId, paramText(params, 'ban_no_target', '你要把谁关进小黑屋？'));
             return;
         }
 
         const [timeStr, unitStr] = c.argv;
         if (!timeStr || !unitStr) {
-            await sendGroup(c.groupId, '格式错误！正确格式：ban @用户 时长 单位（秒/分/时/天），中间都有空格哦');
+            await sendGroup(
+                c.groupId,
+                paramText(
+                    params,
+                    'ban_bad_format',
+                    '格式错误！正确格式：ban @用户 时长 单位（秒/分/时/天），中间都有空格哦',
+                ),
+            );
             return;
         }
 
         const duration = parseDuration(timeStr, unitStr);
         if (!duration) {
-            await sendGroup(c.groupId, '格式输错啦！正确格式：ban @用户 时长 单位（秒/分/时/天），中间都有空格哦');
+            await sendGroup(
+                c.groupId,
+                paramText(
+                    params,
+                    'ban_bad_duration',
+                    '格式输错啦！正确格式：ban @用户 时长 单位（秒/分/时/天），中间都有空格哦',
+                ),
+            );
             return;
         }
 
@@ -56,12 +77,18 @@ registerCommand({
             schedule(5000, async () => {
                 if (!pendingBans.has(key)) return;
                 pendingBans.delete(key);
-                await sendGroup(c.groupId, '禁言操作可能失败，请检查机器人权限');
+                await sendGroup(
+                    c.groupId,
+                    paramText(params, 'ban_maybe_failed', '禁言操作可能失败，请检查机器人权限'),
+                );
             });
         } catch (e) {
             pendingBans.delete(key);
             logError('[群管助手] 禁言失败:', e);
-            await sendGroup(c.groupId, `禁言失败：${String(e)}`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'ban_failed', '禁言失败：{error}', { error: String(e) }),
+            );
         }
     },
 });
@@ -71,9 +98,10 @@ registerCommand({
     feature: 'ban',
     description: 'kick @用户 — 将成员移出本群',
     handler: async (c) => {
+        const params = banParams(c.groupId);
         const target = c.atTargets[0];
         if (!target) {
-            await sendGroup(c.groupId, '你要踢谁？');
+            await sendGroup(c.groupId, paramText(params, 'kick_no_target', '你要踢谁？'));
             return;
         }
 
@@ -85,12 +113,18 @@ registerCommand({
             });
         } catch (e) {
             logError('[群管助手] 踢人失败:', e);
-            await sendGroup(c.groupId, `踢人失败：${String(e)}`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'kick_failed', '踢人失败：{error}', { error: String(e) }),
+            );
             return;
         }
 
         schedule(1000, async () => {
-            await sendGroup(c.groupId, `${target} 消失啦~`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'kick_success', '{user} 消失啦~', { user: target }),
+            );
         });
     },
 });
@@ -100,9 +134,10 @@ registerCommand({
     feature: 'ban',
     description: 'unban @用户 — 解除禁言',
     handler: async (c) => {
+        const params = banParams(c.groupId);
         const target = c.atTargets[0];
         if (!target) {
-            await sendGroup(c.groupId, '你想把谁放出小黑屋？');
+            await sendGroup(c.groupId, paramText(params, 'unban_no_target', '你想把谁放出小黑屋？'));
             return;
         }
 
@@ -113,10 +148,16 @@ registerCommand({
                 duration: 0,
             });
             removeBanRecord(c.groupId, target);
-            await sendGroup(c.groupId, `已将 ${target} 放出小黑屋`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'unban_success', '已将 {user} 放出小黑屋', { user: target }),
+            );
         } catch (e) {
             logError('[群管助手] 解除禁言失败:', e);
-            await sendGroup(c.groupId, `解禁失败：${String(e)}`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'unban_failed', '解禁失败：{error}', { error: String(e) }),
+            );
         }
     },
 });
@@ -126,9 +167,10 @@ registerCommand({
     feature: 'ban',
     description: '撤回消息 — 引用一条消息把它撤回',
     handler: async (c) => {
+        const params = banParams(c.groupId);
         const replyId = replyIdOf(c.event);
         if (!replyId) {
-            await sendGroup(c.groupId, '你要撤回哪条消息？');
+            await sendGroup(c.groupId, paramText(params, 'recall_no_target', '你要撤回哪条消息？'));
             return;
         }
 
@@ -136,7 +178,10 @@ registerCommand({
             await callAction('delete_msg', { message_id: replyId });
         } catch (e) {
             logError('[群管助手] 撤回消息失败:', e);
-            await sendGroup(c.groupId, `撤回失败：${String(e)}`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'recall_failed', '撤回失败：{error}', { error: String(e) }),
+            );
         }
     },
 });
@@ -160,7 +205,12 @@ registerNotice('group_ban', null, async (ctx) => {
         logDebug(`[群管助手] 禁言回执 group=${ctx.groupId} user=${ctx.userId}`);
         await sendGroup(
             ctx.groupId,
-            `已成功把用户 ${ctx.userId} 禁言${pending.timeStr}${pending.unitStr}`,
+            paramText(
+                banParams(ctx.groupId),
+                'ban_success',
+                '已成功把用户 {user} 禁言{time}',
+                { user: ctx.userId, time: `${pending.timeStr}${pending.unitStr}` },
+            ),
         );
     }
 });
@@ -172,6 +222,9 @@ registerNotice('group_decrease', null, async (ctx) => {
     if (!ctx.operatorId) return;
 
     if (isGlobalAdmin(ctx.operatorId) && isGlobalAdmin(ctx.userId)) {
-        await sendGroup(ctx.groupId, '铸币你要不看看你在踢谁？');
+        await sendGroup(
+            ctx.groupId,
+            paramText(banParams(ctx.groupId), 'kick_admin_warn', '铸币你要不看看你在踢谁？'),
+        );
     }
 });

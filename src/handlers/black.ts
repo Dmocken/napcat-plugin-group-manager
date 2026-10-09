@@ -3,12 +3,16 @@
  *
  * 数据结构与旧版完全一致，直接沿用旧 black_history.json：
  *   [ { "id": 1, "user_id": 123456, "content": [ { "type": "text", "data": "..." } ] } ]
+ *
+ * 提示文案可在 WebUI 的「黑历史 → 提示文案」里改。
  */
 
 import { callAction, replyIdOf, segmentsOf, sendGroup } from '../core/messages';
+import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logError, logDebug } from '../core/state';
 import { readJson, writeJson } from '../core/store';
+import { paramText } from '../core/texts';
 
 const DATA_FILE = 'black_history.json';
 
@@ -37,9 +41,10 @@ registerCommand({
     feature: 'black',
     description: '入典 — 引用一条纯文字消息记入黑历史',
     handler: async (c) => {
+        const params = getFeatureSettings(c.groupId, 'black').params;
         const replyId = replyIdOf(c.event);
         if (!replyId) {
-            await sendGroup(c.groupId, '你想让我记住什么啊？');
+            await sendGroup(c.groupId, paramText(params, 'black_no_reply', '你想让我记住什么啊？'));
             return;
         }
 
@@ -57,13 +62,13 @@ registerCommand({
 
             const segs = Array.isArray(msg?.message) ? msg.message : null;
             if (!segs) {
-                await sendGroup(c.groupId, '这种消息我还记不住啦！');
+                await sendGroup(c.groupId, paramText(params, 'black_unsupported', '这种消息我还记不住啦！'));
                 return;
             }
 
             const hasNonText = segs.some((s: { type?: string }) => s.type !== 'text');
             if (hasNonText) {
-                await sendGroup(c.groupId, '这种消息我还记不住啦！');
+                await sendGroup(c.groupId, paramText(params, 'black_unsupported', '这种消息我还记不住啦！'));
                 return;
             }
 
@@ -72,12 +77,12 @@ registerCommand({
                 .map((s: { data?: { text?: string } }) => ({ type: 'text', data: String(s.data?.text ?? '') }));
 
             if (!content.length) {
-                await sendGroup(c.groupId, '这种消息我还记不住啦！');
+                await sendGroup(c.groupId, paramText(params, 'black_unsupported', '这种消息我还记不住啦！'));
                 return;
             }
         } catch (e) {
             logError('[群管助手] 获取被引用消息失败:', e);
-            await sendGroup(c.groupId, '我拿不到那条消息，记不住啦！');
+            await sendGroup(c.groupId, paramText(params, 'black_fetch_failed', '我拿不到那条消息，记不住啦！'));
             return;
         }
 
@@ -87,7 +92,7 @@ registerCommand({
         saveHistory(history);
 
         logDebug(`[群管助手] 新增黑历史 #${newId}`);
-        await sendGroup(c.groupId, `我记住这b的黑历史啦！编号为：${newId}`);
+        await sendGroup(c.groupId, paramText(params, 'black_added', '我记住这b的黑历史啦！编号为：{id}', { id: newId }));
     },
 });
 
@@ -96,9 +101,10 @@ registerCommand({
     feature: 'black',
     description: '查看黑历史 [编号 / @某人] — 随机查看一条，带编号或 @ 时精确查询',
     handler: async (c) => {
+        const params = getFeatureSettings(c.groupId, 'black').params;
         const history = loadHistory();
         if (!history.length) {
-            await sendGroup(c.groupId, '还没有记录任何黑历史呢');
+            await sendGroup(c.groupId, paramText(params, 'black_empty', '还没有记录任何黑历史呢'));
             return;
         }
 
@@ -108,19 +114,22 @@ registerCommand({
             const target = Number(c.atTargets[0]);
             const own = history.filter((r) => Number(r.user_id) === target);
             if (!own.length) {
-                await sendGroup(c.groupId, '这个人还没有黑历史呢~');
+                await sendGroup(c.groupId, paramText(params, 'black_user_empty', '这个人还没有黑历史呢~'));
                 return;
             }
             record = own[Math.floor(Math.random() * own.length)];
         } else if (c.argv.length) {
             const id = Number(c.argv[0]);
             if (!Number.isFinite(id)) {
-                await sendGroup(c.groupId, '你写的这玩意儿是编号吗？！');
+                await sendGroup(c.groupId, paramText(params, 'black_bad_id', '你写的这玩意儿是编号吗？！'));
                 return;
             }
             record = history.find((r) => Number(r.id) === id);
             if (!record) {
-                await sendGroup(c.groupId, `没有找到编号为 ${id} 的黑历史！`);
+                await sendGroup(
+                    c.groupId,
+                    paramText(params, 'black_id_not_found', '没有找到编号为 {id} 的黑历史！', { id }),
+                );
                 return;
             }
         } else {
@@ -128,7 +137,14 @@ registerCommand({
         }
 
         const body = record.content.map((x) => x.data).join('');
-        await sendGroup(c.groupId, `找到${record.user_id}的黑历史(ID:${record.id})：\n${body}`);
+        await sendGroup(
+            c.groupId,
+            paramText(params, 'black_found', '找到{user}的黑历史(ID:{id})：\n{content}', {
+                user: record.user_id,
+                id: record.id,
+                content: body,
+            }),
+        );
     },
 });
 
@@ -137,27 +153,31 @@ registerCommand({
     feature: 'black',
     description: '删除黑历史 编号 — 删除指定编号的黑历史',
     handler: async (c) => {
+        const params = getFeatureSettings(c.groupId, 'black').params;
         if (c.argv.length !== 1) {
-            await sendGroup(c.groupId, '删哪个？');
+            await sendGroup(c.groupId, paramText(params, 'black_del_no_arg', '删哪个？'));
             return;
         }
 
         const id = Number(c.argv[0]);
         if (!Number.isFinite(id)) {
-            await sendGroup(c.groupId, '我数数是用的数字数的！');
+            await sendGroup(c.groupId, paramText(params, 'black_del_bad_id', '我数数是用的数字数的！'));
             return;
         }
 
         const history = loadHistory();
         const index = history.findIndex((r) => Number(r.id) === id);
         if (index < 0) {
-            await sendGroup(c.groupId, `我这儿都没有编号为 ${id} 的黑历史啊！`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'black_del_not_found', '我这儿都没有编号为 {id} 的黑历史啊！', { id }),
+            );
             return;
         }
 
         history.splice(index, 1);
         saveHistory(history);
-        await sendGroup(c.groupId, `我忘掉编号为 ${id} 的黑历史了！`);
+        await sendGroup(c.groupId, paramText(params, 'black_deleted', '我忘掉编号为 {id} 的黑历史了！', { id }));
     },
 });
 

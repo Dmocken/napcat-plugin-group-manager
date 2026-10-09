@@ -5,6 +5,7 @@
 import type { MessageSegmentLike, RawEventLike } from '../types';
 import { assetsDirs, fileToBase64, resolveAsset } from './store';
 import { ctx, getGlobal, logDebug, logError, logWarn } from './state';
+import { globalText } from './texts';
 
 export type Seg = MessageSegmentLike;
 
@@ -234,11 +235,25 @@ export function commandPrefix(): string {
     return getGlobal().command_prefix || '/';
 }
 
-/** 无权限等统一提示 */
+/**
+ * 无权限等统一提示
+ * 用 getter 读取全局配置里的自定义文案（WebUI「全局设置 → 通用提示文案」），
+ * 这样调用处仍然可以写 MESSAGES.noPermission。
+ */
 export const MESSAGES = {
-    noPermission: '您没有权限使用该功能。',
-    featureDisabled: '本群未启用该功能。',
-    pluginDisabled: '插件总开关已关闭。',
-    needGroup: '该命令只能在群聊中使用。',
-    needPrivate: '该命令只能在私聊中使用。',
+    get noPermission() {
+        return globalText('no_permission');
+    },
+    get featureDisabled() {
+        return globalText('feature_disabled');
+    },
+    get pluginDisabled() {
+        return globalText('plugin_disabled');
+    },
+    get needGroup() {
+        return globalText('need_group');
+    },
+    get needPrivate() {
+        return globalText('need_private');
+    },
 };

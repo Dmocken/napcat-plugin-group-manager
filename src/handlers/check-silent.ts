@@ -17,6 +17,7 @@ import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logError } from '../core/state';
 import { readJson, writeJson } from '../core/store';
+import { paramText } from '../core/texts';
 import { formatTime, paramNumber, paramString, toSeconds } from '../core/utils';
 
 const DATA_FILE = 'silent_members.json';
@@ -379,10 +380,15 @@ registerCommand({
     permission: 'none',
     description: 'check / check kick [原因] / check user QQ号 / check debug — 静默成员检查与踢出',
     handler: async (c: CommandContext) => {
+        const params = getFeatureSettings(c.groupId || 0, 'check_silent').params;
+
         /* ---- 群聊触发 ---- */
         if (c.groupId) {
             if (!canUse(c.groupId, c.userId, c.role, 'check_silent')) {
-                await sendGroup(c.groupId, '⛔ 该功能仅限群主或管理员使用。');
+                await sendGroup(
+                    c.groupId,
+                    paramText(params, 'check_no_permission', '⛔ 该功能仅限群主或管理员使用。'),
+                );
                 return;
             }
 
@@ -407,32 +413,38 @@ registerCommand({
             if (sub === 'user') {
                 const uid = Number(c.argv[1]);
                 if (!Number.isFinite(uid)) {
-                    await sendGroup(c.groupId, '用法：check user [QQ号]');
+                    await sendGroup(c.groupId, paramText(params, 'check_user_usage', '用法：check user [QQ号]'));
                     return;
                 }
                 await doUserCheck(c.groupId, target, uid);
                 return;
             }
 
-            await sendGroup(c.groupId, USAGE_GROUP);
+            await sendGroup(c.groupId, paramText(params, 'check_usage_group', USAGE_GROUP));
             return;
         }
 
         /* ---- 私聊触发（仅 Bot 管理员） ---- */
         if (!isGlobalAdmin(c.userId)) {
-            await sendPrivate(c.userId, '⛔ 私聊指令仅限机器人主人使用。');
+            await sendPrivate(
+                c.userId,
+                paramText(params, 'check_private_only', '⛔ 私聊指令仅限机器人主人使用。'),
+            );
             return;
         }
 
         const parts = c.argv;
         if ((parts[0] ?? '').toLowerCase() !== 'group') {
-            await sendPrivate(c.userId, USAGE_PRIVATE);
+            await sendPrivate(c.userId, paramText(params, 'check_usage_private', USAGE_PRIVATE));
             return;
         }
 
         const groupId = Number(parts[1]);
         if (!Number.isFinite(groupId)) {
-            await sendPrivate(c.userId, '请指定群号，例如：check group 123456');
+            await sendPrivate(
+                c.userId,
+                paramText(params, 'check_group_required', '请指定群号，例如：check group 123456'),
+            );
             return;
         }
 
@@ -453,6 +465,6 @@ registerCommand({
             return;
         }
 
-        await sendPrivate(c.userId, USAGE_PRIVATE);
+        await sendPrivate(c.userId, paramText(params, 'check_usage_private', USAGE_PRIVATE));
     },
 });

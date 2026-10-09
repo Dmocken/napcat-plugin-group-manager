@@ -141,6 +141,13 @@
     .usage { white-space: pre-line; margin-bottom: 10px; }
     .params { background: #00000030; border: 1px dashed var(--line); border-radius: 10px; padding: 12px; }
     .params .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    .param-group { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+    .param-group + .param-group { margin-top: 10px; }
+    .param-group-head { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-weight: 600; font-size: 13px; }
+    .param-group-head:hover { color: var(--accent); }
+    .param-group.open .chev { transform: rotate(90deg); }
+    .param-group .grid2 { margin-top: 10px; }
+    .two-col { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 
     /* toast */
     #toast {
@@ -201,6 +208,16 @@
                 <button id="btnAddAdmin">添加</button>
             </div>
             <div class="tags" id="adminTags"></div>
+        </div>
+        <div style="margin-top:14px;">
+            <h3>通用提示文案（无权限 / 仅群聊等）</h3>
+            <div class="two-col">
+                <label class="field"><span>无权限提示</span><input type="text" id="gTextNoPermission" /></label>
+                <label class="field"><span>仅群聊可用提示</span><input type="text" id="gTextNeedGroup" /></label>
+                <label class="field"><span>仅私聊可用提示</span><input type="text" id="gTextNeedPrivate" /></label>
+                <label class="field"><span>功能未启用提示</span><input type="text" id="gTextFeatureDisabled" /></label>
+            </div>
+            <div class="sub">留空则使用内置默认文案；各功能自己的提示（禁言成功 / 格式错误等）在对应功能模块的「提示文案」分组里改。</div>
         </div>
     </div>
 
@@ -411,64 +428,102 @@
 
     /* ---------------- 参数渲染 ---------------- */
 
+    /** 单个参数输入控件 */
+    function paramField(p, settings) {
+        var field = el('label', 'field');
+        field.appendChild(el('span', null, p.label));
+        var value = settings.params[p.key];
+
+        if (p.type === 'number') {
+            field.appendChild(numberInput(value, function (v) { settings.params[p.key] = v; }));
+        } else if (p.type === 'text') {
+            field.appendChild(textInput(value, '', function (v) { settings.params[p.key] = v; }));
+        } else if (p.type === 'textarea') {
+            var ta = el('textarea');
+            ta.value = value || '';
+            ta.addEventListener('input', function () {
+                settings.params[p.key] = ta.value;
+                markDirty();
+            });
+            field.appendChild(ta);
+        } else if (p.type === 'numberlist') {
+            var ta2 = el('textarea');
+            ta2.value = (Array.isArray(value) ? value : []).join(', ');
+            ta2.rows = 2;
+            ta2.addEventListener('input', function () {
+                settings.params[p.key] = ta2.value.split(/[,，\s]+/).filter(Boolean).map(Number);
+                markDirty();
+            });
+            field.appendChild(ta2);
+        } else if (p.type === 'wordlists') {
+            var wl = settings.params[p.key] || {};
+            (p.subKeys || []).forEach(function (sk) {
+                var sub = el('label', 'field');
+                sub.appendChild(el('span', null, sk.label));
+                var area = el('textarea');
+                var arr = Array.isArray(wl[sk.key]) ? wl[sk.key] : [];
+                area.value = arr.join('\n');
+                area.rows = 4;
+                area.addEventListener('input', function () {
+                    wl[sk.key] = area.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+                    settings.params[p.key] = wl;
+                    markDirty();
+                });
+                sub.appendChild(area);
+                field.appendChild(sub);
+            });
+        }
+
+        if (p.hint) field.appendChild(el('span', 'sub', p.hint));
+        return field;
+    }
+
+    /** 参数区：按 group 分组（基础参数展开，提示文案组默认收起） */
     function renderParams(feature, settings) {
-        var box = el('div', 'params');
-        var grid = el('div', 'grid2');
         var meta = null;
         state.meta.features.forEach(function (f) { if (f.key === feature.key) meta = f; });
-        var params = meta ? meta.params : [];
+        var params = (meta && meta.params) || [];
         if (!params.length) return null;
 
+        var groups = [];
         params.forEach(function (p) {
-            var field = el('label', 'field');
-            field.appendChild(el('span', null, p.label));
-            var value = settings.params[p.key];
-
-            if (p.type === 'number') {
-                field.appendChild(numberInput(value, function (v) { settings.params[p.key] = v; }));
-            } else if (p.type === 'text') {
-                field.appendChild(textInput(value, '', function (v) { settings.params[p.key] = v; }));
-            } else if (p.type === 'textarea') {
-                var ta = el('textarea');
-                ta.value = value || '';
-                ta.addEventListener('input', function () {
-                    settings.params[p.key] = ta.value;
-                    markDirty();
-                });
-                field.appendChild(ta);
-            } else if (p.type === 'numberlist') {
-                var ta2 = el('textarea');
-                ta2.value = (Array.isArray(value) ? value : []).join(', ');
-                ta2.rows = 2;
-                ta2.addEventListener('input', function () {
-                    settings.params[p.key] = ta2.value.split(/[,，\s]+/).filter(Boolean).map(Number);
-                    markDirty();
-                });
-                field.appendChild(ta2);
-            } else if (p.type === 'wordlists') {
-                var wl = settings.params[p.key] || {};
-                (p.subKeys || []).forEach(function (sk) {
-                    var sub = el('label', 'field');
-                    sub.appendChild(el('span', null, sk.label));
-                    var area = el('textarea');
-                    var arr = Array.isArray(wl[sk.key]) ? wl[sk.key] : [];
-                    area.value = arr.join('\n');
-                    area.rows = 4;
-                    area.addEventListener('input', function () {
-                        wl[sk.key] = area.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-                        settings.params[p.key] = wl;
-                        markDirty();
-                    });
-                    sub.appendChild(area);
-                    field.appendChild(sub);
-                });
-            }
-
-            if (p.hint) field.appendChild(el('span', 'sub', p.hint));
-            grid.appendChild(field);
+            var name = p.group || '参数';
+            var g = null;
+            groups.forEach(function (x) { if (x.name === name) g = x; });
+            if (!g) { g = { name: name, items: [] }; groups.push(g); }
+            g.items.push(p);
         });
 
-        box.appendChild(grid);
+        var box = el('div', 'params');
+        groups.forEach(function (g, gi) {
+            var grid = el('div', 'grid2');
+            g.items.forEach(function (p) { grid.appendChild(paramField(p, settings)); });
+
+            // 只有一个分组时直接平铺
+            if (groups.length === 1) {
+                box.appendChild(grid);
+                return;
+            }
+
+            var sect = el('div', 'param-group');
+            var head = el('div', 'param-group-head');
+            head.appendChild(el('span', 'chev', '▶'));
+            head.appendChild(el('span', null, g.name));
+            head.appendChild(el('span', 'sub', g.items.length + ' 项'));
+            sect.appendChild(head);
+            sect.appendChild(grid);
+
+            var open = gi === 0;
+            sect.classList.toggle('open', open);
+            grid.style.display = open ? 'block' : 'none';
+            head.addEventListener('click', function () {
+                var isOpen = sect.classList.contains('open');
+                sect.classList.toggle('open', !isOpen);
+                grid.style.display = isOpen ? 'none' : 'block';
+            });
+            box.appendChild(sect);
+        });
+
         return box;
     }
 
@@ -621,10 +676,24 @@
 
     /* ---------------- 渲染 ---------------- */
 
+    var TEXT_FIELDS = [
+        ['#gTextNoPermission', 'no_permission', '您没有权限使用该功能。'],
+        ['#gTextNeedGroup', 'need_group', '该命令只能在群聊中使用。'],
+        ['#gTextNeedPrivate', 'need_private', '该命令只能在私聊中使用。'],
+        ['#gTextFeatureDisabled', 'feature_disabled', '本群未启用该功能。'],
+    ];
+
     function renderGlobal() {
         $('#gEnabled').checked = state.global.enabled !== false;
         $('#gDebug').checked = state.global.debug === true;
         $('#gPrefix').value = state.global.command_prefix || '/';
+
+        var texts = state.global.texts || {};
+        TEXT_FIELDS.forEach(function (row) {
+            var input = $(row[0]);
+            input.value = texts[row[1]] || '';
+            input.placeholder = '默认：' + row[2];
+        });
 
         var tags = $('#adminTags');
         tags.innerHTML = '';
@@ -821,11 +890,18 @@
     }
 
     function saveAll() {
+        var texts = {};
+        TEXT_FIELDS.forEach(function (row) {
+            var v = $(row[0]).value.trim();
+            if (v) texts[row[1]] = v;
+        });
+
         var payload = {
             enabled: $('#gEnabled').checked,
             debug: $('#gDebug').checked,
             command_prefix: $('#gPrefix').value.trim() || '/',
-            global_admins: state.global.global_admins
+            global_admins: state.global.global_admins,
+            texts: texts
         };
         request('/config', { method: 'POST', body: payload })
             .then(function () { return request('/profiles', { method: 'POST', body: { profiles: state.profiles } }); })
@@ -853,6 +929,10 @@
     $('#gEnabled').addEventListener('change', markDirty);
     $('#gDebug').addEventListener('change', markDirty);
     $('#gPrefix').addEventListener('input', markDirty);
+
+    TEXT_FIELDS.forEach(function (row) {
+        $(row[0]).addEventListener('input', markDirty);
+    });
 
     $('#btnAddAdmin').addEventListener('click', function () {
         var v = $('#adminInput').value.trim();

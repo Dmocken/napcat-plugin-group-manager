@@ -42,6 +42,8 @@ export interface GlobalConfig {
     command_prefix: string;
     /** Bot 管理员（全局最高权限） */
     global_admins: string[];
+    /** 通用提示文案（无权限 / 仅群聊 等），key 见 GLOBAL_TEXT_DEFAULTS */
+    texts?: Record<string, string>;
 }
 
 /** 落盘结构：dataPath/config.json */
@@ -65,6 +67,8 @@ export interface ParamMeta {
     type: ParamType;
     default: unknown;
     hint?: string;
+    /** WebUI 参数区分组名（缺省归入「参数」） */
+    group?: string;
     /** type = wordlists 时，子词表定义 */
     subKeys?: WordListMeta[];
 }

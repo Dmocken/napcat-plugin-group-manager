@@ -17,6 +17,7 @@ import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logDebug, logError } from '../core/state';
 import { readJson } from '../core/store';
+import { paramText } from '../core/texts';
 import { schedule } from '../core/timers';
 import { paramNumber, paramString } from '../core/utils';
 
@@ -31,29 +32,37 @@ registerCommand({
     description: 'join open / join close — 开启或关闭本群加群自动审批',
     handler: async (c) => {
         const arg = (c.argv[0] ?? '').toLowerCase();
-        const enabled = getFeatureSettings(c.groupId, 'join_verify').enabled;
+        const settings = getFeatureSettings(c.groupId, 'join_verify');
+        const params = settings.params;
+        const enabled = settings.enabled;
 
         if (arg === 'open') {
             if (enabled) {
-                await sendGroup(c.groupId, '当前群的加群自动审批已经是开启状态');
+                await sendGroup(c.groupId, paramText(params, 'join_on_echo', '当前群的加群自动审批已经是开启状态'));
                 return;
             }
             setFeatureEnabled(c.groupId, 'join_verify', true);
-            await sendGroup(c.groupId, `已开启群 ${c.groupId} 的加群自动审批`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'join_opened', '已开启群 {group} 的加群自动审批', { group: c.groupId }),
+            );
             return;
         }
 
         if (arg === 'close') {
             if (!enabled) {
-                await sendGroup(c.groupId, '当前群的加群自动审批已经是关闭状态');
+                await sendGroup(c.groupId, paramText(params, 'join_off_echo', '当前群的加群自动审批已经是关闭状态'));
                 return;
             }
             setFeatureEnabled(c.groupId, 'join_verify', false);
-            await sendGroup(c.groupId, `已关闭群 ${c.groupId} 的加群自动审批`);
+            await sendGroup(
+                c.groupId,
+                paramText(params, 'join_closed', '已关闭群 {group} 的加群自动审批', { group: c.groupId }),
+            );
             return;
         }
 
-        await sendGroup(c.groupId, '用法：join open 或 join close');
+        await sendGroup(c.groupId, paramText(params, 'join_usage', '用法：join open 或 join close'));
     },
 });
 
