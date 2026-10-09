@@ -3,8 +3,8 @@
  */
 
 import type { MessageSegmentLike, RawEventLike } from '../types';
-import { fileToBase64, resolveAsset } from './store';
-import { ctx, getGlobal, logDebug, logError } from './state';
+import { assetsDirs, fileToBase64, resolveAsset } from './store';
+import { ctx, getGlobal, logDebug, logError, logWarn } from './state';
 
 export type Seg = MessageSegmentLike;
 
@@ -49,11 +49,23 @@ function toMessage(message: string | Seg[]): Seg[] {
 
 /* ---------------- 发送 ---------------- */
 
+/** 消息摘要（用于失败日志） */
+function brief(message: string | Seg[]): string {
+    const s =
+        typeof message === 'string'
+            ? message
+            : message
+                  .map((seg) => (seg.type === 'text' ? String(seg.data?.text ?? '') : `[${seg.type}]`))
+                  .join('');
+    const one = s.replace(/\s+/g, ' ').trim();
+    return one.length > 100 ? `${one.slice(0, 100)}…` : one;
+}
+
 export async function sendGroup(groupId: number | string, message: string | Seg[]): Promise<void> {
     try {
         await callAction('send_group_msg', { group_id: String(groupId), message: toMessage(message) });
     } catch (e) {
-        logError('[群管助手] 发送群消息失败:', e);
+        logError(`[群管助手] 发送群消息失败 group=${groupId} 内容="${brief(message)}":`, e);
     }
 }
 
@@ -61,7 +73,7 @@ export async function sendPrivate(userId: number | string, message: string | Seg
     try {
         await callAction('send_private_msg', { user_id: String(userId), message: toMessage(message) });
     } catch (e) {
-        logError('[群管助手] 发送私聊消息失败:', e);
+        logError(`[群管助手] 发送私聊消息失败 user=${userId} 内容="${brief(message)}":`, e);
     }
 }
 
@@ -161,6 +173,9 @@ export function replyIdOf(event: RawEventLike): string | null {
 
 const IMAGE_MARKER = /\{image=([^}]+)\}/g;
 
+/** 单张图片 base64 文本上限（过大容易被协议端拒收） */
+const MAX_IMAGE_BASE64 = 2 * 1024 * 1024;
+
 /**
  * 渲染文案为消息段列表：
  * - {key} 形式的变量会被替换为 vars[key]
@@ -181,8 +196,13 @@ export function renderTemplate(template: string, vars: Record<string, string> = 
         if (start > cursor) out.push(text(body.slice(cursor, start)));
         const abs = resolveAsset(m[1], pluginPath);
         const data = abs ? fileToBase64(abs) : null;
-        if (data) out.push(image(data));
-        else logDebug(`[群管助手] 图片标记未解析到文件: ${m[1]}`);
+        if (!data) {
+            logWarn(`[群管助手] 图片标记未解析到文件，已跳过: ${m[1]}（assets 目录：${assetsDirs(pluginPath).join(' | ')}）`);
+        } else if (data.length > MAX_IMAGE_BASE64) {
+            logWarn(`[群管助手] 图片过大已跳过（约 ${Math.round(data.length / 1024 / 1024)} MB）: ${m[1]}`);
+        } else {
+            out.push(image(data));
+        }
         cursor = start + m[0].length;
     }
 

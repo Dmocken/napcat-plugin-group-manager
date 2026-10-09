@@ -13,7 +13,7 @@ import { at, callAction, renderTemplate, sendGroup } from '../core/messages';
 import { canToggle } from '../core/permission';
 import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
-import { logDebug, logError } from '../core/state';
+import { logDebug, logError, logWarn } from '../core/state';
 import { formatDuration, paramNumber, paramString } from '../core/utils';
 
 registerNotice('group_increase', 'newban', async (ctx) => {
@@ -25,39 +25,47 @@ registerNotice('group_increase', 'newban', async (ctx) => {
     const welcomeText = paramString(params, 'welcome_text', DEFAULT_NEWBAN_WELCOME);
     const remuteText = paramString(params, 'remute_text', DEFAULT_NEWBAN_REMUTE);
 
+    // 退群重进（有未过期禁言记录）→ 按原时长重禁；否则按新人时长禁言
+    const pending = getPendingBan(groupId, userId);
+    const remute = pending !== null;
+    const duration = remute ? Math.max(0, Math.floor(Number(pending?.duration) || 0)) : banDuration;
+    const timeStr = formatDuration(duration);
+
+    // 1) 禁言（与文案分开 try，任何一步失败都能在日志里看出是哪一步）
     try {
-        const pending = getPendingBan(groupId, userId);
-
-        if (pending) {
-            // 退群重进：重新施加原禁言时长
-            const original = Math.max(0, Math.floor(Number(pending.duration) || 0));
-            await callAction('set_group_ban', {
-                group_id: String(groupId),
-                user_id: String(userId),
-                duration: original,
-            });
-            removeBanRecord(groupId, userId);
-
-            const timeStr = formatDuration(original);
-            const segments = [at(userId), ...renderTemplate(remuteText, { time: timeStr })];
-            logDebug(`[群管助手] 退群重进重禁 group=${groupId} user=${userId} duration=${original}`);
-            await sendGroup(groupId, segments);
-            return;
-        }
-
         await callAction('set_group_ban', {
             group_id: String(groupId),
             user_id: String(userId),
-            duration: banDuration,
+            duration,
         });
+        logDebug(
+            `[群管助手] ${remute ? '退群重进重禁' : '新人禁言'} group=${groupId} user=${userId} duration=${duration}`,
+        );
+    } catch (e) {
+        logError(`[群管助手] 禁言失败 group=${groupId} user=${userId} duration=${duration}:`, e);
+    }
 
-        const timeStr = formatDuration(banDuration);
-        const segments = [at(userId), ...renderTemplate(welcomeText, { time: timeStr })];
-        logDebug(`[群管助手] 新人禁言 group=${groupId} user=${userId} duration=${banDuration}`);
+    // 2) 文案（支持 {time} 与 {image=...}）
+    try {
+        const segments = [at(userId), ...renderTemplate(remute ? remuteText : welcomeText, { time: timeStr })];
+        // 除 @ 外没有实质内容时（例如 {image=...} 没解析到图片）退回默认文案，
+        // 否则会发出一条只有 @ 的空消息，被协议端拒收，表现就是「文案没发出来」
+        const hasBody = segments.some(
+            (s) => s.type !== 'at' && (s.type !== 'text' || String(s.data?.text ?? '').trim() !== ''),
+        );
+        if (!hasBody) {
+            logWarn(
+                `[群管助手] 入群文案没有可发送内容（检查 {image=...} 是否指向真实存在的图片），已回退默认文案 group=${groupId}`,
+            );
+            segments.push(...renderTemplate(remute ? DEFAULT_NEWBAN_REMUTE : DEFAULT_NEWBAN_WELCOME, { time: timeStr }));
+        }
+        logDebug(`[群管助手] 发送入群文案 group=${groupId} user=${userId} 消息段数=${segments.length}`);
         await sendGroup(groupId, segments);
     } catch (e) {
-        logError('[群管助手] 新人入群处理失败:', e);
+        logError(`[群管助手] 入群文案发送失败 group=${groupId} user=${userId}:`, e);
     }
+
+    if (remute) removeBanRecord(groupId, userId);
 });
 
 registerCommand({
