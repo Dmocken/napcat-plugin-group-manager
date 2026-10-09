@@ -93,20 +93,53 @@
     .tag i { cursor: pointer; font-style: normal; opacity: .7; }
     .tag i:hover { opacity: 1; color: var(--danger); }
 
-    .picker { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--panel); margin-top: 8px; }
-    .picker-list { max-height: 190px; overflow: auto; margin-top: 8px; display: grid; gap: 4px; }
-    .picker-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 6px; border-radius: 7px; cursor: pointer; }
-    .picker-item:hover { background: #ffffff08; }
-    .picker-item small { color: var(--text-dim); }
+    /* 下拉选择（绑定群） */
+    .select-wrap { position: relative; display: inline-block; width: 100%; max-width: 420px; }
+    .select-btn {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        text-align: left; background: var(--panel); border: 1px solid var(--line);
+    }
+    .select-btn .caret { margin-left: auto; color: var(--text-dim); font-size: 11px; transition: transform .16s; }
+    .select-wrap.open .select-btn { border-color: var(--accent); }
+    .select-wrap.open .select-btn .caret { transform: rotate(180deg); }
+    .dropdown {
+        position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 6px);
+        background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+        box-shadow: 0 16px 40px #0009; padding: 8px; display: none;
+    }
+    .select-wrap.open .dropdown { display: block; }
+    .dd-list { max-height: 220px; overflow: auto; display: grid; gap: 2px; }
+    .dd-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+    .dd-item:hover { background: #ffffff0d; }
+    .dd-item.on { background: var(--accent-soft); }
+    .dd-item.locked { opacity: .45; cursor: not-allowed; }
+    .dd-item .ck { margin-left: auto; color: var(--accent); }
+    .dd-item small { color: var(--text-dim); }
+    .dd-add { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; }
+    .dd-add input { max-width: 150px; }
 
-    table.features { width: 100%; border-collapse: collapse; margin-top: 6px; }
-    table.features th, table.features td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-    table.features th { font-size: 12px; color: var(--text-dim); font-weight: 500; }
-    table.features tr.off td { opacity: .55; }
-    .feat-name { min-width: 150px; }
     .badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-dim); margin-left: 6px; }
     .badge.dev { color: var(--warn); border-color: #ffb02055; }
-    .params { background: #00000030; border: 1px dashed var(--line); border-radius: 10px; padding: 12px; margin: 6px 0 14px; }
+
+    /* 功能模块（可折叠） */
+    .modules { display: grid; gap: 10px; margin-top: 12px; }
+    .module { border: 1px solid var(--line); border-radius: 11px; background: var(--panel); overflow: hidden; }
+    .module.on { border-color: #6d5efc66; }
+    .module-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; user-select: none; }
+    .module-head:hover { background: #ffffff08; }
+    .chev { color: var(--text-dim); font-size: 11px; flex: none; transition: transform .16s; }
+    .module.open .chev { transform: rotate(90deg); }
+    .module-title { display: flex; align-items: center; font-weight: 600; flex: none; }
+    .module-sum {
+        color: var(--text-dim); font-size: 12px; margin-left: 2px; min-width: 0;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .module-head .switch { margin-left: auto; flex: none; }
+    .module-body { border-top: 1px solid var(--line); padding: 12px; display: none; }
+    .module.open .module-body { display: block; }
+    .sect + .sect { margin-top: 14px; }
+    .usage { white-space: pre-line; margin-bottom: 10px; }
+    .params { background: #00000030; border: 1px dashed var(--line); border-radius: 10px; padding: 12px; }
     .params .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 
     /* toast */
@@ -222,7 +255,7 @@
     var BASE = location.pathname.replace(/\/(page|files|api)\/.*$/, '');
     var API = BASE + '/api';
 
-    var state = { meta: null, global: null, profiles: [], groups: [], dirty: false };
+    var state = { meta: null, global: null, profiles: [], groups: [], dirty: false, collapsed: {} };
 
     /* ---------------- 工具 ---------------- */
 
@@ -439,90 +472,150 @@
         return box;
     }
 
-    /* ---------------- 群选择器 ---------------- */
+    /* ---------------- 群选择器（下拉菜单） ---------------- */
 
-    function groupPicker(profile) {
+    function closeSelects() {
+        var open = document.querySelectorAll('.select-wrap.open');
+        for (var i = 0; i < open.length; i++) open[i].classList.remove('open');
+    }
+
+    function groupInfo(gid) {
+        for (var i = 0; i < state.groups.length; i++) {
+            if (String(state.groups[i].group_id) === String(gid)) return state.groups[i];
+        }
+        return null;
+    }
+
+    function groupSelect(profile, onCount) {
         var wrap = el('div');
-        var chosen = el('div', 'tags');
-        var panel = el('div', 'picker');
-        var search = textInput('', '搜索群号 / 群名，勾选以绑定', null, '320px');
-        var list = el('div', 'picker-list');
+        wrap.appendChild(el('h3', null, '绑定群'));
+        wrap.appendChild(el('div', 'sub', '从下拉菜单选择群（可多选），选中即绑定，再点一次取消。'));
 
-        function renderChosen() {
-            chosen.innerHTML = '';
-            if (!profile.group_ids.length) {
-                chosen.appendChild(el('span', 'tag grey', '尚未绑定任何群'));
-            }
-            profile.group_ids.forEach(function (gid, i) {
-                var info = state.groups.filter(function (g) { return g.group_id === gid; })[0];
+        var tags = el('div', 'tags');
+        var sel = el('div', 'select-wrap');
+        var btn = el('button', 'select-btn');
+        var btnText = el('span', null, '选择群…');
+        btn.appendChild(btnText);
+        btn.appendChild(el('span', 'caret', '▾'));
+
+        var panel = el('div', 'dropdown');
+        var search = textInput('', '搜索群号 / 群名', null, null);
+        search.style.marginBottom = '6px';
+        var list = el('div', 'dd-list');
+        var addRow = el('div', 'dd-add');
+        var addInput = textInput('', '群号', null, '150px');
+        var addBtn = el('button', null, '手动添加');
+        addRow.appendChild(el('span', 'sub', '列表里没有？'));
+        addRow.appendChild(addInput);
+        addRow.appendChild(addBtn);
+        panel.appendChild(search);
+        panel.appendChild(list);
+        panel.appendChild(addRow);
+        sel.appendChild(btn);
+        sel.appendChild(panel);
+
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var wasOpen = sel.classList.contains('open');
+            closeSelects();
+            if (!wasOpen) { sel.classList.add('open'); search.focus(); }
+        });
+        panel.addEventListener('click', function (e) { e.stopPropagation(); });
+
+        function ids() { return profile.group_ids || (profile.group_ids = []); }
+
+        /** 归属判断以本地数据为准（服务端快照在编辑期间是旧的） */
+        function ownerMap() {
+            var map = {};
+            state.profiles.forEach(function (p) {
+                if (p.id === profile.id) return;
+                (p.group_ids || []).forEach(function (gid) { map[String(gid)] = p; });
+            });
+            return map;
+        }
+
+        function renderTags() {
+            var list_ = ids();
+            tags.innerHTML = '';
+            if (!list_.length) tags.appendChild(el('span', 'tag grey', '尚未绑定任何群'));
+            list_.forEach(function (gid, i) {
+                var info = groupInfo(gid);
                 var tag = el('span', 'tag');
-                tag.appendChild(el('b', null, (info ? info.group_name : '未知群') + ' (' + gid + ')'));
+                tag.appendChild(el('b', null, (info ? (info.group_name || '未命名群') : '未知群') + ' (' + gid + ')'));
                 var x = el('i', null, '×');
                 x.addEventListener('click', function () {
-                    profile.group_ids.splice(i, 1);
+                    ids().splice(i, 1);
                     markDirty();
-                    renderChosen();
-                    renderList();
+                    refresh();
                 });
                 tag.appendChild(x);
-                chosen.appendChild(tag);
+                tags.appendChild(tag);
             });
         }
 
         function renderList() {
             list.innerHTML = '';
             var kw = search.value.trim().toLowerCase();
+            var chosen = ids();
+            var owners = ownerMap();
             var items = state.groups.filter(function (g) {
                 if (!kw) return true;
-                return g.group_id.indexOf(kw) >= 0 || (g.group_name || '').toLowerCase().indexOf(kw) >= 0;
+                return String(g.group_id).indexOf(kw) >= 0 || (g.group_name || '').toLowerCase().indexOf(kw) >= 0;
             });
             if (!items.length) {
-                list.appendChild(el('div', 'sub', '没有匹配的群'));
-                return;
+                list.appendChild(el('div', 'sub', '没有匹配的群（收不到群列表时可以手动添加群号）'));
             }
-            // 归属判断以本地数据为准（服务端快照在编辑期间是旧的）
-            var ownerMap = {};
-            state.profiles.forEach(function (p) {
-                if (p.id === profile.id) return;
-                (p.group_ids || []).forEach(function (gid) { ownerMap[gid] = p; });
-            });
-
             items.forEach(function (g) {
-                var chosenHere = profile.group_ids.indexOf(g.group_id) >= 0;
-                var owner = ownerMap[g.group_id] || null;
-
-                var item = el('label', 'picker-item');
-                var cb = el('input');
-                cb.type = 'checkbox';
-                cb.checked = chosenHere;
-                cb.disabled = !!owner;
-                cb.addEventListener('change', function () {
-                    if (cb.checked) {
-                        if (profile.group_ids.indexOf(g.group_id) < 0) profile.group_ids.push(g.group_id);
+                var gid = String(g.group_id);
+                var on = chosen.indexOf(gid) >= 0;
+                var owner = owners[gid] || null;
+                var item = el('div', 'dd-item' + (on ? ' on' : '') + (owner ? ' locked' : ''));
+                item.appendChild(el('span', null, g.group_name || '未命名群'));
+                item.appendChild(el('small', null, ' (' + gid + (g.member_count ? ' · ' + g.member_count + ' 人' : '') + ')' + (owner ? ' · 已被「' + owner.label + '」绑定' : '')));
+                if (on) item.appendChild(el('span', 'ck', '✓'));
+                item.addEventListener('click', function () {
+                    if (owner) { toast('该群已被「' + owner.label + '」绑定'); return; }
+                    if (on) {
+                        profile.group_ids = chosen.filter(function (x) { return x !== gid; });
                     } else {
-                        profile.group_ids = profile.group_ids.filter(function (x) { return x !== g.group_id; });
+                        chosen.push(gid);
                     }
                     markDirty();
-                    renderChosen();
-                    renderList();
+                    refresh();
                 });
-                item.appendChild(cb);
-                item.appendChild(el('span', null, (g.group_name || '未命名群') + ' '));
-                item.appendChild(el('small', null, '(' + g.group_id + (g.member_count ? ' · ' + g.member_count + '人' : '') + ')' + (owner ? ' · 已被「' + owner.label + '」绑定' : '')));
                 list.appendChild(item);
             });
         }
 
+        function refresh() {
+            var list_ = ids();
+            btnText.textContent = list_.length ? ('已绑定 ' + list_.length + ' 个群') : '选择群…';
+            if (onCount) onCount(list_.length);
+            renderTags();
+            renderList();
+        }
+
+        function addManual() {
+            var v = addInput.value.trim();
+            if (!/^\d{5,12}$/.test(v)) { toast('请输入正确的群号', 'err'); return; }
+            var owner = ownerMap()[v];
+            if (owner) { toast('该群已被「' + owner.label + '」绑定'); return; }
+            if (ids().indexOf(v) >= 0) { toast('该群已绑定'); return; }
+            ids().push(v);
+            addInput.value = '';
+            markDirty();
+            refresh();
+        }
+
+        addBtn.addEventListener('click', function (e) { e.stopPropagation(); addManual(); });
+        addInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); addManual(); }
+        });
         search.addEventListener('input', renderList);
 
-        panel.appendChild(el('h3', null, '绑定群（一条配置可绑定多个群）'));
-        panel.appendChild(search);
-        panel.appendChild(list);
-
-        wrap.appendChild(chosen);
-        wrap.appendChild(panel);
-        renderChosen();
-        renderList();
+        wrap.appendChild(tags);
+        wrap.appendChild(sel);
+        refresh();
         return wrap;
     }
 
@@ -550,6 +643,82 @@
         if (!state.global.global_admins.length) tags.appendChild(el('span', 'tag grey', '暂无管理员'));
     }
 
+    /** 折叠状态下显示的一行摘要 */
+    function featureSummary(meta, settings) {
+        if (!settings.enabled) return '未启用';
+        var parts = [settings.allow_group_admin ? '群管可用' : '仅名单'];
+        if (settings.allowed_users.length) parts.push('名单 ' + settings.allowed_users.length + ' 人');
+        var n = (meta.params || []).length;
+        if (n) parts.push('参数 ' + n + ' 项');
+        return parts.join(' · ');
+    }
+
+    /** 单个功能 → 可折叠的模块卡片 */
+    function featureModule(profile, meta) {
+        var settings = profile.features[meta.key];
+        if (!settings) {
+            settings = { enabled: false, allow_group_admin: false, allowed_users: [], params: {} };
+            profile.features[meta.key] = settings;
+        }
+        (meta.params || []).forEach(function (p) {
+            if (settings.params[p.key] === undefined) settings.params[p.key] = p.default;
+        });
+
+        var storeKey = profile.id + '|' + meta.key;
+        var mod = el('div', 'module');
+        var head = el('div', 'module-head');
+        head.appendChild(el('span', 'chev', '▶'));
+
+        var title = el('div', 'module-title');
+        title.appendChild(el('span', null, meta.label));
+        if (!meta.implemented) title.appendChild(el('span', 'badge dev', '开发中'));
+        head.appendChild(title);
+
+        var sum = el('div', 'module-sum', featureSummary(meta, settings));
+        head.appendChild(sum);
+
+        var sw = switchBox(settings.enabled, '', function (v) {
+            settings.enabled = v;
+            mod.classList.toggle('on', v);
+            sum.textContent = featureSummary(meta, settings);
+        });
+        sw.addEventListener('click', function (e) { e.stopPropagation(); });
+        head.appendChild(sw);
+        mod.appendChild(head);
+
+        var body = el('div', 'module-body');
+        body.appendChild(el('div', 'sub usage', meta.usage || ''));
+
+        var sectPerm = el('div', 'sect');
+        sectPerm.appendChild(el('h3', null, '使用权限'));
+        sectPerm.appendChild(switchBox(settings.allow_group_admin, '允许群主 / 管理员使用', function (v) {
+            settings.allow_group_admin = v;
+            sum.textContent = featureSummary(meta, settings);
+        }));
+        sectPerm.appendChild(el('div', 'sub', '成员名单（名单内成员始终可用，不受上面开关影响）'));
+        sectPerm.appendChild(listEditor(settings.allowed_users, function () {
+            sum.textContent = featureSummary(meta, settings);
+        }));
+        body.appendChild(sectPerm);
+
+        var paramsBox = renderParams(meta, settings);
+        if (paramsBox) {
+            var sectParam = el('div', 'sect');
+            sectParam.appendChild(el('h3', null, '参数'));
+            sectParam.appendChild(paramsBox);
+            body.appendChild(sectParam);
+        }
+        mod.appendChild(body);
+
+        mod.classList.toggle('on', !!settings.enabled);
+        if (!state.collapsed[storeKey]) mod.classList.add('open');
+        head.addEventListener('click', function () {
+            mod.classList.toggle('open');
+            state.collapsed[storeKey] = !mod.classList.contains('open');
+        });
+        return mod;
+    }
+
     function renderProfiles() {
         var box = $('#profiles');
         box.innerHTML = '';
@@ -561,13 +730,29 @@
 
         state.profiles.forEach(function (profile, index) {
             var card = el('div', 'profile');
+            var allKeys = state.meta.features.map(function (f) { return profile.id + '|' + f.key; });
 
             var head = el('div', 'profile-head');
-            var name = textInput(profile.label, '配置名称', function (v) { profile.label = v; }, '280px');
+            var name = textInput(profile.label, '配置名称', function (v) { profile.label = v; }, '240px');
             name.className = 'name';
             head.appendChild(name);
             head.appendChild(el('span', 'badge', '#' + (index + 1)));
+            var groupBadge = el('span', 'badge', (profile.group_ids || []).length + ' 个群');
+            head.appendChild(groupBadge);
             head.appendChild(el('span', 'spacer'));
+
+            var allBtn = el('button');
+            function allOpen() {
+                return allKeys.every(function (k) { return !state.collapsed[k]; });
+            }
+            allBtn.textContent = allOpen() ? '收起全部' : '展开全部';
+            allBtn.addEventListener('click', function () {
+                var collapse = allOpen();
+                allKeys.forEach(function (k) { state.collapsed[k] = collapse; });
+                renderProfiles();
+            });
+            head.appendChild(allBtn);
+
             var del = el('button', 'danger', '删除此配置');
             del.addEventListener('click', function () {
                 confirmBox('删除群配置', '确定删除「' + profile.label + '」？该操作会在保存后生效。').then(function (ok) {
@@ -580,76 +765,13 @@
             head.appendChild(del);
             card.appendChild(head);
 
-            card.appendChild(groupPicker(profile));
+            card.appendChild(groupSelect(profile, function (n) { groupBadge.textContent = n + ' 个群'; }));
 
-            var table = el('table', 'features');
-            var thead = el('thead');
-            var tr = el('tr');
-            ['功能', '启用', '群主/管理员可用', '允许使用的成员名单', '参数'].forEach(function (h) {
-                tr.appendChild(el('th', null, h));
-            });
-            thead.appendChild(tr);
-            table.appendChild(thead);
-
-            var tbody = el('tbody');
+            var modules = el('div', 'modules');
             state.meta.features.forEach(function (meta) {
-                var settings = profile.features[meta.key] || { enabled: false, allow_group_admin: false, allowed_users: [], params: {} };
-                profile.features[meta.key] = settings;
-
-                var row = el('tr');
-                if (!settings.enabled) row.className = 'off';
-
-                var nameCell = el('td', 'feat-name');
-                nameCell.appendChild(el('div', null, meta.label));
-                if (!meta.implemented) nameCell.appendChild(el('span', 'badge dev', '开发中'));
-                nameCell.appendChild(el('div', 'sub', meta.usage.split('\n')[0]));
-                row.appendChild(nameCell);
-
-                var tdEnabled = el('td');
-                tdEnabled.appendChild(switchBox(settings.enabled, '', function (v) {
-                    settings.enabled = v;
-                    row.className = v ? '' : 'off';
-                }));
-                row.appendChild(tdEnabled);
-
-                var tdAdmin = el('td');
-                tdAdmin.appendChild(switchBox(settings.allow_group_admin, '', function (v) {
-                    settings.allow_group_admin = v;
-                }));
-                row.appendChild(tdAdmin);
-
-                var tdList = el('td');
-                tdList.appendChild(listEditor(settings.allowed_users, function () {}));
-                row.appendChild(tdList);
-
-                var tdParam = el('td');
-                var paramsBox = renderParams(meta, settings);
-                if (paramsBox) {
-                    var toggle = el('button', null, '展开');
-                    toggle.addEventListener('click', function () {
-                        var open = paramsBox.style.display !== 'none';
-                        paramsBox.style.display = open ? 'none' : 'block';
-                        toggle.textContent = open ? '展开' : '收起';
-                    });
-                    paramsBox.style.display = 'none';
-                    tdParam.appendChild(toggle);
-                    tbody.appendChild(row);
-
-                    var pRow = el('tr');
-                    if (!settings.enabled) pRow.className = 'off';
-                    var pTd = el('td');
-                    pTd.colSpan = 5;
-                    pTd.appendChild(paramsBox);
-                    pRow.appendChild(pTd);
-                    tbody.appendChild(pRow);
-                } else {
-                    tdParam.appendChild(el('span', 'sub', '无'));
-                    tbody.appendChild(row);
-                }
+                modules.appendChild(featureModule(profile, meta));
             });
-
-            table.appendChild(tbody);
-            card.appendChild(table);
+            card.appendChild(modules);
             box.appendChild(card);
         });
     }
@@ -787,6 +909,9 @@
                 btn.textContent = '开始导入';
             });
     });
+
+    // 点击空白处收起所有下拉
+    document.addEventListener('click', function () { closeSelects(); });
 
     window.addEventListener('beforeunload', function (e) {
         if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
