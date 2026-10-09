@@ -29,6 +29,14 @@ export const DEFAULT_GLOBAL: GlobalConfig = {
     global_admins: [],
 };
 
+/** 新人禁言的默认文案（沿用旧版 nonebot/newban.py） */
+export const DEFAULT_NEWBAN_WELCOME =
+    '新人进群首先禁言{time}。\nPhira相关下载方式及其使用的问题均在群公告！';
+export const DEFAULT_NEWBAN_REMUTE =
+    ' 检测到你在退群前处于禁言状态，重新施加禁言{time}。\n' +
+    '这不是新入群禁言，请不要尝试通过退群重进来逃避禁言！\n' +
+    'Phira相关下载方式及其使用的问题均在群公告！';
+
 /**
  * 加群审核关键词表默认值
  * 原自 nonebot/group_join_verify.py 的 AGREEMENT_WORDS / NEGATION_MODIFIERS /
@@ -57,7 +65,7 @@ export const FEATURES: FeatureMeta[] = [
         label: '手动禁言 / 踢人 / 解禁 / 撤回',
         usage: 'ban @用户 时长 单位（秒/分/时/天）\nkick @用户\nunban @用户\n撤回消息（引用要撤回的消息）',
         block: false,
-        implemented: false,
+        implemented: true,
         params: [],
     },
     {
@@ -65,7 +73,7 @@ export const FEATURES: FeatureMeta[] = [
         label: '随机禁言',
         usage: '直接发送 sm 或 smplus（无需前缀）\n有权限时：sm @用户 随机禁言被 @ 的人\n无权限时：sm 禁言自己',
         block: true,
-        implemented: false,
+        implemented: true,
         params: [
             { key: 'sm_min', label: 'sm 最短时长（秒）', type: 'number', default: 1 },
             { key: 'sm_max', label: 'sm 最长时长（秒）', type: 'number', default: 3600 },
@@ -86,21 +94,21 @@ export const FEATURES: FeatureMeta[] = [
         label: '新人禁言',
         usage: 'newban open / newban close\n新人入群自动禁言并发送通知（含退群重进重禁）',
         block: true,
-        implemented: false,
+        implemented: true,
         params: [
             { key: 'ban_duration', label: '默认禁言时长（秒）', type: 'number', default: 180 },
             {
                 key: 'welcome_text',
                 label: '新人进群通知文案',
                 type: 'textarea',
-                default: '新人进群首先禁言{time}。\nPhira相关下载方式及其使用的问题均在群公告！',
+                default: DEFAULT_NEWBAN_WELCOME,
                 hint: '{time} 会替换为人类可读时长；{image=/assets/tip.png} 会替换为图片',
             },
             {
                 key: 'remute_text',
                 label: '退群重进重新禁言文案',
                 type: 'textarea',
-                default: ' 检测到你在退群前处于禁言状态，重新施加禁言{time}。\n这不是新入群禁言，请不要尝试通过退群重进来逃避禁言！',
+                default: DEFAULT_NEWBAN_REMUTE,
                 hint: '同上，支持 {time} 与 {image=...}',
             },
         ],
@@ -110,7 +118,7 @@ export const FEATURES: FeatureMeta[] = [
         label: '静默成员检查',
         usage: 'check —— 检查并记录入群超 N 天且从未发言的成员\ncheck kick [原因] —— 踢出已记录的静默成员\ncheck user QQ号 —— 查看某成员入群与发言时间\ncheck debug —— 输出接口原始数据',
         block: true,
-        implemented: false,
+        implemented: true,
         params: [
             { key: 'days', label: '判定天数', type: 'number', default: 3, hint: '入群超过该天数且从未发言视为静默' },
             {
@@ -128,7 +136,7 @@ export const FEATURES: FeatureMeta[] = [
         label: '加群审核',
         usage: 'join open / join close\n开启后自动审批加群申请：已在其它官方群 → 拒绝；答案表达同意 → 通过',
         block: true,
-        implemented: false,
+        implemented: true,
         params: [
             { key: 'qq_level_threshold', label: 'QQ 等级阈值', type: 'number', default: 10, hint: '等级 ≥ 阈值立刻通过，否则延迟后通过' },
             { key: 'delay_seconds', label: '低等级延迟通过秒数', type: 'number', default: 1800 },
@@ -155,7 +163,7 @@ export const FEATURES: FeatureMeta[] = [
         label: '撤回消息统计',
         usage: 'recall open / recall close\n私聊：recall 群号 QQ号 —— 查询某成员被撤回记录',
         block: true,
-        implemented: false,
+        implemented: true,
         params: [
             { key: 'thresholds', label: '提醒次数阈值（逗号分隔）', type: 'numberlist', default: [3, 5] },
             {

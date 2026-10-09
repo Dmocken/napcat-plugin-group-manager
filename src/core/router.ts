@@ -53,9 +53,22 @@ function namesOf(def: CommandDef): string[] {
     return [def.name, ...(def.aliases ?? [])].map((n) => n.toLowerCase());
 }
 
+/**
+ * 取出用于解析命令的文本
+ *
+ * 注意：不能直接用 raw_message —— 消息里带 @ 时（例如「@机器人 /ban @某人 1 分」）
+ * raw_message 是 CQ 码形式（[CQ:at,qq=...] ...），命令名会被埋在后面导致解析失败；
+ * 因此优先用「文本段拼接」的纯文本视图，没有消息段时再退回 raw_message。
+ */
+function parseSource(event: RawEventLike): string {
+    const segs = segmentsOf(event);
+    if (segs.length) return plainTextOf(event).trim();
+    return (event.raw_message ?? '').trim();
+}
+
 /** 解析命令与参数 */
 function parse(event: RawEventLike): { hasPrefix: boolean; tokens: string[]; argText: string } | null {
-    const raw = (event.raw_message ?? '').trim();
+    const raw = parseSource(event);
     if (!raw) return null;
 
     const prefix = commandPrefix();
@@ -156,7 +169,7 @@ function buildContext(
         argv: tokens.slice(1),
         argText,
         atTargets: atTargetsOf(event),
-        plainText: plainTextOf(event),
+        plainText: parseSource(event),
     };
 }
 

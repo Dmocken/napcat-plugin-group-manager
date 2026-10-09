@@ -25,18 +25,27 @@ export type RequestHandler = (c: EventContext) => Promise<void> | void;
 
 interface Registered<T> {
     kind: T;
-    feature: FeatureKey;
+    /** null 表示不受群功能开关限制（只受插件总开关限制），用于「任何群都要记录」的场景 */
+    feature: FeatureKey | null;
     handler: NoticeHandler;
 }
 
 const noticeHandlers: Registered<string>[] = [];
 const requestHandlers: Registered<string>[] = [];
 
-export function registerNotice(noticeType: string, feature: FeatureKey, handler: NoticeHandler): void {
+export function registerNotice(
+    noticeType: string,
+    feature: FeatureKey | null,
+    handler: NoticeHandler,
+): void {
     noticeHandlers.push({ kind: noticeType, feature, handler });
 }
 
-export function registerRequest(requestType: string, feature: FeatureKey, handler: RequestHandler): void {
+export function registerRequest(
+    requestType: string,
+    feature: FeatureKey | null,
+    handler: RequestHandler,
+): void {
     requestHandlers.push({ kind: requestType, feature, handler });
 }
 
@@ -62,8 +71,8 @@ async function run(
     let handled = false;
 
     for (const h of matched) {
-        // 该群未启用此功能 → 跳过
-        if (context.groupId && !getFeatureSettings(context.groupId, h.feature).enabled) continue;
+        // 该群未启用此功能 → 跳过（feature 为 null 表示不受群开关限制）
+        if (h.feature && context.groupId && !getFeatureSettings(context.groupId, h.feature).enabled) continue;
         handled = true;
         stats.eventHandled += 1;
         try {

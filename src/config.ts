@@ -24,8 +24,9 @@ export function buildConfigSchema(ctx: NapCatPluginContext): PluginConfigSchema 
         C.boolean('debug', '调试日志', false, '在 NapCat 日志中输出详细执行信息，排查问题用', true),
         C.text('command_prefix', '命令前缀', '/', '形如 / 或 #；sm、smplus 为裸命令，不受前缀影响', true),
         C.plainText(
-            '分群配置：在插件页面「群管助手」→「群配置」中新增条目，一条条目可绑定多个群，' +
-                '并可逐个功能设置「是否启用 / 群主管理员是否可用 / 允许使用的成员名单」。',
+            `分群配置入口：NapCat WebUI 插件详情里的「群管助手」页面（路径 /plugin/${ctx.pluginName}/page/dashboard）。` +
+                `如果那里没有显示入口，浏览器直接打开 /plugin/${ctx.pluginName}/api/ui 也是同一个配置界面。` +
+                `在页面中可以新增「群配置」条目，一条条目可绑定多个群，并逐个功能设置「是否启用 / 群主管理员是否可用 / 允许使用的成员名单」以及各功能的参数与文案。`,
         ),
     );
 }

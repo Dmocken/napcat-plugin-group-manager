@@ -95,3 +95,28 @@ export function saveProfiles(input: unknown): { ok: boolean; message?: string } 
     replaceProfiles(result.profiles);
     return { ok: true };
 }
+
+/**
+ * 取出该群所属的配置条目；没有则新建一条（只含这一个群）
+ * 供群内 /newban open、/join open、/recall open 这类开关命令使用
+ */
+export function ensureGroupProfile(groupId: number | string): GroupProfile {
+    const key = String(groupId);
+    const existing = getProfiles().find((p) => p.group_ids.includes(key));
+    if (existing) return existing;
+
+    const profile = createEmptyProfile(nextProfileId(), `群 ${key}`);
+    profile.group_ids = [key];
+    const all = [...getProfiles(), profile];
+    replaceProfiles(all);
+    return getProfiles().find((p) => p.id === profile.id) as GroupProfile;
+}
+
+/** 运行时开关某群某功能；返回该功能当前是否启用 */
+export function setFeatureEnabled(groupId: number | string, key: string, enabled: boolean): boolean {
+    const profile = ensureGroupProfile(groupId);
+    if (!profile.features[key]) profile.features[key] = defaultFeatureSettings(key as never);
+    profile.features[key].enabled = enabled;
+    replaceProfiles([...getProfiles()]);
+    return enabled;
+}

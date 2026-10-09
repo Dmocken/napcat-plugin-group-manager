@@ -218,7 +218,8 @@
 (function () {
     'use strict';
 
-    var BASE = location.pathname.replace(/\/(page|files)\/.*$/, '');
+    // 支持三种访问形式：/page/dashboard、/api/ui、/files/static/xxx
+    var BASE = location.pathname.replace(/\/(page|files|api)\/.*$/, '');
     var API = BASE + '/api';
 
     var state = { meta: null, global: null, profiles: [], groups: [], dirty: false };
