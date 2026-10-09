@@ -29,6 +29,8 @@ export interface GroupProfile {
     id: string;
     label: string;
     group_ids: string[];
+    /** 功能卡片在 WebUI 里的显示顺序（WebUI 拖动排序后写入，缺省按内置顺序） */
+    feature_order?: string[];
     features: Record<string, FeatureSettings>;
 }
 
@@ -44,6 +46,8 @@ export interface GlobalConfig {
     global_admins: string[];
     /** 通用提示文案（无权限 / 仅群聊 等），key 见 GLOBAL_TEXT_DEFAULTS */
     texts?: Record<string, string>;
+    /** 插件页面的访问密码（在 NapCat 插件配置里设置）；留空表示不校验 */
+    webui_password?: string;
 }
 
 /** 落盘结构：dataPath/config.json */
@@ -54,7 +58,14 @@ export interface PluginStore {
 
 /* ---------------- 参数元信息（用于 WebUI 自动渲染） ---------------- */
 
-export type ParamType = 'number' | 'text' | 'textarea' | 'numberlist' | 'wordlists';
+export type ParamType =
+    | 'boolean'
+    | 'number'
+    | 'text'
+    | 'password'
+    | 'textarea'
+    | 'numberlist'
+    | 'wordlists';
 
 export interface WordListMeta {
     key: string;
@@ -73,6 +84,13 @@ export interface ParamMeta {
     subKeys?: WordListMeta[];
 }
 
+/** 参数区下方的操作按钮（如「测试 API Key」） */
+export interface FeatureAction {
+    /** 前端按此分发具体行为 */
+    key: string;
+    label: string;
+}
+
 /** 功能元信息（前后端共用） */
 export interface FeatureMeta {
     key: FeatureKey;
@@ -84,6 +102,8 @@ export interface FeatureMeta {
     /** 是否已实现（未实现的在 WebUI 上标注「开发中」） */
     implemented: boolean;
     params: ParamMeta[];
+    /** 参数区底部的操作按钮 */
+    actions?: FeatureAction[];
 }
 
 /* ---------------- OneBot 事件（宽松类型，只声明本插件用到的字段） ---------------- */

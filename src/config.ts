@@ -23,6 +23,13 @@ export function buildConfigSchema(ctx: NapCatPluginContext): PluginConfigSchema 
         C.boolean('enabled', '插件总开关', true, '关闭后所有群的所有功能都不再生效（Bot 管理员也会被停用）', true),
         C.boolean('debug', '调试日志', false, '在 NapCat 日志中输出详细执行信息，排查问题用', true),
         C.text('command_prefix', '命令前缀', '/', '形如 / 或 #；sm、smplus 为裸命令，不受前缀影响', true),
+        C.text(
+            'webui_password',
+            '插件页面访问密码',
+            '',
+            '外部直接打开插件页面 / 接口时需要输入的密码，留空表示不校验（任何人可访问，包括读到 AI 的 API Key，不建议留空）。改完即时生效。',
+            true,
+        ),
         C.plainText(
             `分群配置入口：NapCat WebUI 插件详情里的「群管助手」页面（路径 /plugin/${ctx.pluginName}/page/dashboard）。` +
                 `如果那里没有显示入口，浏览器直接打开 /plugin/${ctx.pluginName}/api/ui 也是同一个配置界面。` +

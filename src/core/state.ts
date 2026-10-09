@@ -58,6 +58,15 @@ export function uptimeText(): string {
 
 function cleanGlobal(raw: Partial<GlobalConfig> | undefined): GlobalConfig {
     const g = raw ?? {};
+
+    const texts: Record<string, string> = {};
+    if (g.texts && typeof g.texts === 'object' && !Array.isArray(g.texts)) {
+        for (const [k, v] of Object.entries(g.texts as Record<string, unknown>)) {
+            const s = String(v ?? '').trim();
+            if (s) texts[k] = s;
+        }
+    }
+
     return {
         enabled: g.enabled !== false,
         debug: g.debug === true,
@@ -65,6 +74,8 @@ function cleanGlobal(raw: Partial<GlobalConfig> | undefined): GlobalConfig {
         global_admins: Array.isArray(g.global_admins)
             ? g.global_admins.map((v) => String(v).trim()).filter(Boolean)
             : [],
+        texts,
+        webui_password: typeof g.webui_password === 'string' ? g.webui_password.trim() : '',
     };
 }
 
@@ -116,10 +127,23 @@ export function cleanProfiles(raw: unknown): GroupProfile[] {
             features[key] = cleanFeature(p.features?.[key], key);
         }
 
+        // 功能卡片顺序：过滤非法值、去重，再把缺失的功能补到末尾
+        const featureOrder: string[] = [];
+        if (Array.isArray(p.feature_order)) {
+            for (const raw of p.feature_order) {
+                const key = String(raw);
+                if (FEATURE_KEYS.includes(key as never) && !featureOrder.includes(key)) featureOrder.push(key);
+            }
+        }
+        for (const key of FEATURE_KEYS) {
+            if (!featureOrder.includes(key)) featureOrder.push(key);
+        }
+
         profiles.push({
             id,
             label: typeof p.label === 'string' && p.label ? p.label : `群配置 ${index + 1}`,
             group_ids: groupIds,
+            feature_order: featureOrder,
             features,
         });
     });

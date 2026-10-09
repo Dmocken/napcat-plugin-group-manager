@@ -10,12 +10,14 @@
  * 判断改为关键词模式（不再依赖 jieba），词表可在插件配置页按群编辑。
  */
 
+import { DEFAULT_AI_FAIL_NOTIFY, DEFAULT_AI_PROMPT } from '../constants';
+import { callAiChat, parseAiVerdict } from '../services/ai-judge';
 import { resolveWords, judgeAnswer } from '../services/text-judge';
 import { registerRequest } from '../core/events';
-import { callAction, sendGroup } from '../core/messages';
+import { callAction, sendGroup, sendPrivate } from '../core/messages';
 import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
-import { logDebug, logError } from '../core/state';
+import { getGlobal, logDebug, logError, logWarn } from '../core/state';
 import { readJson } from '../core/store';
 import { paramText } from '../core/texts';
 import { schedule } from '../core/timers';
@@ -65,6 +67,30 @@ registerCommand({
         await sendGroup(c.groupId, paramText(params, 'join_usage', '用法：join open 或 join close'));
     },
 });
+
+/** AI 判断失败：私聊所有 Bot 管理员，本次申请不自动审批（保持待处理） */
+async function notifyAiFailure(
+    params: Record<string, unknown>,
+    vars: { group: number; user: number; question: string; answer: string; error: string },
+): Promise<void> {
+    const admins = getGlobal().global_admins ?? [];
+    if (!admins.length) {
+        logWarn('[群管助手] AI 判断失败，但没有配置 Bot 管理员，无法私聊通知');
+        return;
+    }
+
+    const message = paramText(params, 'ai_fail_notify', DEFAULT_AI_FAIL_NOTIFY, {
+        group: vars.group,
+        user: vars.user,
+        question: vars.question || '(未提供问题)',
+        answer: vars.answer || '(未提供答案)',
+        error: vars.error,
+    });
+
+    for (const admin of admins) {
+        await sendPrivate(admin, message);
+    }
+}
 
 registerRequest('group', 'join_verify', async (ctx) => {
     const event = ctx.event;
@@ -158,20 +184,79 @@ registerRequest('group', 'join_verify', async (ctx) => {
         /* 文件不存在或格式错误则跳过 */
     }
 
-    /* 3. 答案解析 + 语义判断 */
-    let comment = String(commentRaw).trim();
-    const answer = comment.match(/答案[：:]\s*([\s\S]*)$/);
-    if (answer) comment = answer[1].trim();
+    /* 3. 解析问题与答案（comment 形如「问题：xxx\n答案：yyy」） */
+    const commentText = String(commentRaw).trim();
+    let questionText = '';
+    let answerText = commentText;
+    const qa = commentText.match(/问题[：:]\s*([\s\S]*?)\s*答案[：:]\s*([\s\S]*)$/);
+    if (qa) {
+        questionText = qa[1].trim();
+        answerText = qa[2].trim();
+    } else {
+        const onlyAnswer = commentText.match(/答案[：:]\s*([\s\S]*)$/);
+        if (onlyAnswer) answerText = onlyAnswer[1].trim();
+    }
 
+    /* 4. 判断：开启 AI 时优先用 AI，失败按配置回退关键词 */
     const words = resolveWords(params.words);
-    if (!judgeAnswer(comment, words)) {
-        logDebug(`[群管助手] 加群审核：答案未表达同意（"${comment}"），拒绝`);
+    let approved = judgeAnswer(answerText, words);
+    let how = '关键词';
+    logDebug(`[群管助手] 加群审核：关键词判定=${approved}（答案 "${answerText}"）`);
+
+    // 开关型参数；兼容早期存成 0/1 的旧值
+    const aiEnabled = params.ai_enabled === true || Number(params.ai_enabled) === 1;
+    if (aiEnabled) {
+        const call = await callAiChat(
+            {
+                baseUrl: paramString(params, 'ai_base_url', 'https://api.deepseek.com'),
+                apiKey: paramString(params, 'ai_api_key', ''),
+                model: paramString(params, 'ai_model', 'deepseek-chat'),
+                prompt: paramString(params, 'ai_prompt', DEFAULT_AI_PROMPT),
+                timeoutMs: paramNumber(params, 'ai_timeout_ms', 10000),
+            },
+            questionText,
+            answerText,
+        );
+
+        if (!call.ok) {
+            // AI 判断失败：私聊 Bot 管理员，本次申请保持待处理，不做自动审批
+            logError(`[群管助手] 加群审核：AI 判断失败（${call.error}），已通知管理员手动处理`);
+            await notifyAiFailure(params, {
+                group: groupId,
+                user: userId,
+                question: questionText,
+                answer: answerText,
+                error: call.error,
+            });
+            return;
+        }
+
+        const verdict = parseAiVerdict(call.content);
+        if (verdict === null) {
+            const reason = `模型回复无法解析出 1/0：${JSON.stringify(call.content.slice(0, 120))}`;
+            logError(`[群管助手] 加群审核：${reason}，已通知管理员手动处理`);
+            await notifyAiFailure(params, {
+                group: groupId,
+                user: userId,
+                question: questionText,
+                answer: answerText,
+                error: reason,
+            });
+            return;
+        }
+
+        approved = verdict;
+        how = 'AI';
+    }
+
+    if (!approved) {
+        logDebug(`[群管助手] 加群审核：${how}判定不通过，拒绝`);
         await respond(false);
         return;
     }
-    logDebug(`[群管助手] 加群审核：答案 "${comment}" 判定为同意`);
+    logDebug(`[群管助手] 加群审核：${how}判定通过，进入等级判断`);
 
-    /* 4. 按 QQ 等级决定立刻通过还是暂缓通过 */
+    /* 5. 按 QQ 等级决定立刻通过还是暂缓通过 */
     const levelThreshold = Math.floor(paramNumber(params, 'qq_level_threshold', 10));
     const delaySeconds = Math.max(0, Math.floor(paramNumber(params, 'delay_seconds', 1800)));
 

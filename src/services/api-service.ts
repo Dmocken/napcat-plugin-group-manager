@@ -9,9 +9,11 @@ import type {
     NapCatPluginContext,
     PluginHttpRequest,
     PluginHttpResponse,
+    PluginRequestHandler,
 } from 'napcat-types/napcat-onebot/network/plugin/types';
 
-import { DEFAULT_GLOBAL, DEFAULT_JUDGE_WORDS, FEATURES, FEATURE_KEYS } from '../constants';
+import { DEFAULT_AI_PROMPT, DEFAULT_GLOBAL, DEFAULT_JUDGE_WORDS, FEATURES, FEATURE_KEYS } from '../constants';
+import { parseAiVerdict, testAiConnection } from './ai-judge';
 import { findProfileByGroup, newProfile, saveProfiles, validateProfiles } from '../core/profiles';
 import { getGlobal, getProfiles, stats, updateGlobal, uptimeText } from '../core/state';
 import { getDataDir, listDataFiles } from '../core/store';
@@ -21,12 +23,65 @@ function fail(res: PluginHttpResponse, code: number, message: string): void {
     res.status(code).json({ code: -1, message });
 }
 
+/* ---------------- 页面访问密码 ---------------- */
+
+/** 从请求里取密码：支持 x-plugin-password 头 / ?pwd= / cookie gm_pwd= */
+function requestPassword(req: PluginHttpRequest): string {
+    const header = req.headers['x-plugin-password'];
+    const fromHeader = Array.isArray(header) ? header[0] : header;
+    if (typeof fromHeader === 'string' && fromHeader) return fromHeader;
+
+    const q = req.query?.pwd;
+    const fromQuery = Array.isArray(q) ? q[0] : q;
+    if (typeof fromQuery === 'string' && fromQuery) return fromQuery;
+
+    const cookie = req.headers.cookie;
+    const raw = Array.isArray(cookie) ? cookie.join(';') : String(cookie ?? '');
+    const m = raw.match(/(?:^|;\s*)gm_pwd=([^;]+)/);
+    if (m) {
+        try {
+            return decodeURIComponent(m[1]);
+        } catch {
+            return m[1];
+        }
+    }
+    return '';
+}
+
+/**
+ * 密码守卫：未在「插件配置」里设置密码时放行（保持旧行为）；
+ * 设置了密码后，请求必须带上正确密码，否则 401。
+ */
+function guard(handler: PluginRequestHandler): PluginRequestHandler {
+    return (req, res, next) => {
+        const expected = String(getGlobal().webui_password ?? '').trim();
+        if (!expected) return handler(req, res, next);
+        if (requestPassword(req) === expected) return handler(req, res, next);
+        res.status(401).json({ code: 401, message: '需要访问密码' });
+    };
+}
+
+/** 回传给前端的全局配置（去掉密码本身，避免出现在页面里） */
+function publicGlobal(): Record<string, unknown> {
+    const global = { ...getGlobal() } as Record<string, unknown>;
+    delete global.webui_password;
+    return global;
+}
+
 export function registerApiRoutes(ctx: NapCatPluginContext): void {
     const router = ctx.router;
 
+    /* 所有接口都过一遍密码守卫 */
+    const get = (path: string, handler: PluginRequestHandler): void => {
+        router.getNoAuth(path, guard(handler));
+    };
+    const post = (path: string, handler: PluginRequestHandler): void => {
+        router.postNoAuth(path, guard(handler));
+    };
+
     /* ---------------- 状态 ---------------- */
 
-    router.getNoAuth('/status', (_req, res) => {
+    get('/status', (_req, res) => {
         const profiles = getProfiles();
         res.json({
             code: 0,
@@ -36,7 +91,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
                 uptime: uptimeText(),
                 dataPath: getDataDir(),
                 stats: { ...stats },
-                global: getGlobal(),
+                global: publicGlobal(),
                 summary: {
                     profiles: profiles.length,
                     groups: profiles.reduce((n, p) => n + p.group_ids.length, 0),
@@ -48,7 +103,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
 
     /* ---------------- 元信息 ---------------- */
 
-    router.getNoAuth('/meta', (_req, res) => {
+    get('/meta', (_req, res) => {
         res.json({
             code: 0,
             data: {
@@ -62,17 +117,19 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
 
     /* ---------------- 全局配置 ---------------- */
 
-    router.getNoAuth('/config', (_req, res) => {
-        res.json({ code: 0, data: getGlobal() });
+    get('/config', (_req, res) => {
+        res.json({ code: 0, data: publicGlobal() });
     });
 
-    router.postNoAuth('/config', (req, res) => {
+    post('/config', (req, res) => {
         const body = req.body as Record<string, unknown> | undefined;
         if (!body) return fail(res, 400, '请求体为空');
         try {
-            const global = updateGlobal(body);
+            // 页面不能改密码，密码只能在 NapCat 的插件配置里设置
+            delete body.webui_password;
+            updateGlobal(body);
             ctx.logger.info('[群管助手] 全局配置已更新');
-            res.json({ code: 0, data: global });
+            res.json({ code: 0, data: publicGlobal() });
         } catch (e) {
             ctx.logger.error('[群管助手] 保存全局配置失败:', e);
             fail(res, 500, String(e));
@@ -81,7 +138,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
 
     /* ---------------- 群列表 ---------------- */
 
-    router.getNoAuth('/groups', async (_req, res) => {
+    get('/groups', async (_req, res) => {
         try {
             const groups = (await ctx.actions.call(
                 'get_group_list',
@@ -113,11 +170,11 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
 
     /* ---------------- 群配置条目 ---------------- */
 
-    router.getNoAuth('/profiles', (_req, res) => {
+    get('/profiles', (_req, res) => {
         res.json({ code: 0, data: getProfiles() });
     });
 
-    router.postNoAuth('/profiles', (req, res) => {
+    post('/profiles', (req, res) => {
         const body = req.body as { profiles?: unknown } | undefined;
         try {
             const result = saveProfiles(body?.profiles ?? []);
@@ -130,26 +187,53 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         }
     });
 
-    router.postNoAuth('/profiles/validate', (req, res) => {
+    post('/profiles/validate', (req, res) => {
         const body = req.body as { profiles?: unknown } | undefined;
         const result = validateProfiles(body?.profiles ?? []);
         if (!result.ok) return fail(res, 400, result.message);
         res.json({ code: 0, data: result.profiles.length });
     });
 
-    router.postNoAuth('/profiles/new', (_req, res) => {
+    post('/profiles/new', (_req, res) => {
         res.json({ code: 0, data: newProfile() });
+    });
+
+    /* ---------------- AI 接口测试 ---------------- */
+
+    post('/ai/test', async (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const str = (k: string, def = ''): string => {
+            const v = body[k];
+            return typeof v === 'string' ? v : def;
+        };
+
+        const result = await testAiConnection({
+            baseUrl: str('base_url'),
+            apiKey: str('api_key'),
+            model: str('model', 'deepseek-chat'),
+            prompt: str('prompt', DEFAULT_AI_PROMPT),
+            timeoutMs: Number(body.timeout_ms ?? 10000) || 10000,
+        });
+
+        if (!result.ok) {
+            ctx.logger.info(`[群管助手] AI 接口测试失败：${result.error}`);
+            return fail(res, 400, result.error);
+        }
+
+        const verdict = parseAiVerdict(result.content);
+        ctx.logger.info(`[群管助手] AI 接口测试成功，回复：${result.content.slice(0, 80)}`);
+        res.json({ code: 0, data: { ok: true, reply: result.content, verdict } });
     });
 
     /* ---------------- 数据文件 ---------------- */
 
-    router.getNoAuth('/data/files', (_req, res) => {
+    get('/data/files', (_req, res) => {
         res.json({ code: 0, data: { dataPath: getDataDir(), files: listDataFiles() } });
     });
 
     /* ---------------- 旧配置导入 ---------------- */
 
-    router.postNoAuth('/import', (req, res) => {
+    post('/import', (req, res) => {
         const body = req.body as { dir?: string; overwriteData?: boolean } | undefined;
         const dir = typeof body?.dir === 'string' ? body.dir.trim() : '';
         if (!dir) return fail(res, 400, '请填写旧插件 config 目录的绝对路径');

@@ -121,11 +121,22 @@
     .badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-dim); margin-left: 6px; }
     .badge.dev { color: var(--warn); border-color: #ffb02055; }
 
-    /* 功能模块（可折叠） */
-    .modules { display: grid; gap: 10px; margin-top: 12px; }
+    /* 功能模块（栅格排布 + 可折叠 + 拖拽排序）
+       左右：列等宽、间距固定（gap），一行 1~3 张卡片；
+       上下：行高随卡片内容自适应 */
+    .modules {
+        display: grid; gap: 10px; margin-top: 12px;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+    }
+    @media (min-width: 760px) { .modules { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (min-width: 1200px) { .modules { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
     .module { border: 1px solid var(--line); border-radius: 11px; background: var(--panel); overflow: hidden; }
     .module.on { border-color: #6d5efc66; }
-    .module-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; user-select: none; }
+    .module.dragging { opacity: .45; }
+    .module.drop-target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+    .module-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: grab; user-select: none; }
+    .module-head:active { cursor: grabbing; }
     .module-head:hover { background: #ffffff08; }
     .chev { color: var(--text-dim); font-size: 11px; flex: none; transition: transform .16s; }
     .module.open .chev { transform: rotate(90deg); }
@@ -141,6 +152,14 @@
     .usage { white-space: pre-line; margin-bottom: 10px; }
     .params { background: #00000030; border: 1px dashed var(--line); border-radius: 10px; padding: 12px; }
     .params .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    .grid2 .field.wide { grid-column: 1 / -1; }
+    .sub-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .sub-head b { font-weight: 600; font-size: 12px; }
+    .sub-field + .sub-field { margin-top: 12px; }
+    .tags.scroll { max-height: 156px; overflow: auto; padding-right: 4px; }
+    .param-actions { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); display: grid; gap: 8px; }
+    .action-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .action-row .sub { min-width: 0; word-break: break-all; }
     .param-group { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
     .param-group + .param-group { margin-top: 10px; }
     .param-group-head { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-weight: 600; font-size: 13px; }
@@ -256,6 +275,18 @@
     </div>
 
     <div id="toast"></div>
+    <div class="modal-mask" id="pwdMask">
+        <div class="modal">
+            <h2>访问密码</h2>
+            <div class="sub" id="pwdTip" style="margin-bottom:14px;">该插件页面已设置访问密码。</div>
+            <label class="field"><span>密码</span><input type="password" id="pwdInput" autocomplete="current-password" /></label>
+            <div class="row">
+                <a href="javascript:void(0)" class="sub" id="pwdClear">清除已保存的密码</a>
+                <span class="spacer"></span>
+                <button class="primary" id="pwdOk">进入</button>
+            </div>
+        </div>
+    </div>
     <div class="modal-mask" id="modalMask">
         <div class="modal">
             <h2 id="modalTitle">确认</h2>
@@ -308,6 +339,11 @@
         });
     }
 
+    /** 深拷贝参数默认值，避免多条配置共享同一份对象 */
+    function cloneDefault(v) {
+        return v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;
+    }
+
     function markDirty() {
         state.dirty = true;
         $('#dirtyHint').textContent = '有未保存的修改';
@@ -320,18 +356,54 @@
         $('#dirtyHint').style.color = '';
     }
 
+    /* ---------------- 访问密码 ---------------- */
+
+    var PWD_KEY = 'napcat-group-manager-pwd';
+
+    function savedPwd() {
+        try { return localStorage.getItem(PWD_KEY) || ''; } catch (e) { return ''; }
+    }
+
+    function savePwd(v) {
+        try {
+            if (v) localStorage.setItem(PWD_KEY, v);
+            else localStorage.removeItem(PWD_KEY);
+        } catch (e) { /* 忽略隐私模式下的异常 */ }
+    }
+
+    function askPassword() {
+        $('#pwdTip').textContent = savedPwd()
+            ? '密码不正确，请重新输入。'
+            : '该插件页面已设置访问密码，请输入后继续。';
+        $('#pwdMask').classList.add('show');
+    }
+
     function request(path, options) {
         var opt = options || {};
+        var headers = { 'Content-Type': 'application/json' };
+        var pwd = savedPwd();
+        if (pwd) headers['x-plugin-password'] = pwd;
         return fetch(API + path, {
             method: opt.method || 'GET',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: opt.body ? JSON.stringify(opt.body) : undefined
         }).then(function (res) {
+            if (res.status === 401) {
+                var err = new Error('需要访问密码');
+                err.needPassword = true;
+                throw err;
+            }
             return res.json().catch(function () { return { code: -1, message: 'HTTP ' + res.status }; });
         }).then(function (json) {
             if (json && json.code === 0) return json.data;
             throw new Error((json && json.message) || '请求失败');
         });
+    }
+
+    /** 统一错误处理：遇到 401 弹密码框，其它情况弹提示 */
+    function handleError(e, prefix) {
+        if (e && e.needPassword) { askPassword(); return; }
+        toast((prefix || '') + (e && e.message ? e.message : '未知错误'), 'err');
     }
 
     /* ---------------- 开关 / 输入绑定 ---------------- */
@@ -377,49 +449,78 @@
 
     /* ---------------- 列表（名单）编辑 ---------------- */
 
-    function listEditor(list, onChange) {
+    /**
+     * 胶囊列表编辑器：单行输入框 + 添加按钮，已添加的项以胶囊展示（点 × 删除）
+     * @param opts.placeholder 输入框占位提示
+     * @param opts.width 输入框宽度
+     * @param opts.splitter 批量分隔正则（默认逗号 / 分号 / 空白）
+     * @param opts.scroll 胶囊区是否限高滚动
+     * @param opts.onCount 数量变化回调
+     */
+    function listEditor(list, onChange, opts) {
+        var options = opts || {};
+        var splitter = options.splitter || /[,，;；\s]+/;
         var wrap = el('div');
         var row = el('div', 'row');
-        var input = textInput('', 'QQ 号，回车添加', null, '150px');
+        var input = textInput(
+            '',
+            options.placeholder || '输入后回车添加，可用逗号一次添加多个',
+            null,
+            options.width || '240px'
+        );
+        var btn = el('button', null, '添加');
 
         function commit() {
-            var v = input.value.trim();
-            if (!v) return;
-            if (list.indexOf(v) >= 0) { toast('该 QQ 号已在名单中'); return; }
-            list.push(v);
+            var raw = input.value.trim();
+            if (!raw) return;
+            var parts = raw.split(splitter).map(function (s) { return s.trim(); }).filter(Boolean);
+            var added = 0;
+            var dup = 0;
+            parts.forEach(function (v) {
+                if (list.indexOf(v) >= 0) { dup += 1; return; }
+                list.push(v);
+                added += 1;
+            });
+            if (!added) {
+                toast(dup ? '这些项都已经在列表里了' : '没有可添加的内容');
+                return;
+            }
             input.value = '';
             onChange();
             markDirty();
             renderTags();
+            if (dup) toast('已添加 ' + added + ' 项，跳过 ' + dup + ' 项重复');
         }
 
         input.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') { e.preventDefault(); commit(); }
         });
 
-        var btn = el('button', null, '添加');
         btn.addEventListener('click', commit);
 
         row.appendChild(input);
         row.appendChild(btn);
         wrap.appendChild(row);
 
-        var tags = el('div', 'tags');
+        var tags = el('div', 'tags' + (options.scroll ? ' scroll' : ''));
         function renderTags() {
             tags.innerHTML = '';
-            list.forEach(function (qq, i) {
+            if (!list.length) tags.appendChild(el('span', 'tag grey', '暂无'));
+            list.forEach(function (v, i) {
                 var tag = el('span', 'tag');
-                tag.appendChild(el('b', null, qq));
+                tag.appendChild(el('b', null, v));
                 var x = el('i', null, '×');
                 x.addEventListener('click', function () {
                     list.splice(i, 1);
                     onChange();
                     markDirty();
                     renderTags();
+                    if (options.onCount) options.onCount(list.length);
                 });
                 tag.appendChild(x);
                 tags.appendChild(tag);
             });
+            if (options.onCount) options.onCount(list.length);
         }
         renderTags();
         wrap.appendChild(tags);
@@ -430,14 +531,28 @@
 
     /** 单个参数输入控件 */
     function paramField(p, settings) {
-        var field = el('label', 'field');
+        // 词表类参数占满整行，胶囊才排得开
+        var field = el('label', 'field' + (p.type === 'wordlists' ? ' wide' : ''));
         field.appendChild(el('span', null, p.label));
         var value = settings.params[p.key];
 
-        if (p.type === 'number') {
+        if (p.type === 'boolean') {
+            // 兼容早期可能存成 0/1 的旧值
+            field.appendChild(switchBox(value === true || value === 1, '开启', function (v) { settings.params[p.key] = v; }));
+        } else if (p.type === 'number') {
             field.appendChild(numberInput(value, function (v) { settings.params[p.key] = v; }));
         } else if (p.type === 'text') {
             field.appendChild(textInput(value, '', function (v) { settings.params[p.key] = v; }));
+        } else if (p.type === 'password') {
+            var pw = el('input');
+            pw.type = 'password';
+            pw.value = typeof value === 'string' ? value : '';
+            pw.autocomplete = 'new-password';
+            pw.addEventListener('input', function () {
+                settings.params[p.key] = pw.value;
+                markDirty();
+            });
+            field.appendChild(pw);
         } else if (p.type === 'textarea') {
             var ta = el('textarea');
             ta.value = value || '';
@@ -456,20 +571,26 @@
             });
             field.appendChild(ta2);
         } else if (p.type === 'wordlists') {
-            var wl = settings.params[p.key] || {};
+            var wl = settings.params[p.key] || (settings.params[p.key] = {});
             (p.subKeys || []).forEach(function (sk) {
-                var sub = el('label', 'field');
-                sub.appendChild(el('span', null, sk.label));
-                var area = el('textarea');
-                var arr = Array.isArray(wl[sk.key]) ? wl[sk.key] : [];
-                area.value = arr.join('\n');
-                area.rows = 4;
-                area.addEventListener('input', function () {
-                    wl[sk.key] = area.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-                    settings.params[p.key] = wl;
-                    markDirty();
-                });
-                sub.appendChild(area);
+                var arr = Array.isArray(wl[sk.key]) ? wl[sk.key] : (wl[sk.key] = []);
+
+                var sub = el('div', 'sub-field');
+                var subHead = el('div', 'sub-head');
+                subHead.appendChild(el('b', null, sk.label));
+                var subCount = el('span', 'sub', arr.length + ' 项');
+                subHead.appendChild(subCount);
+                sub.appendChild(subHead);
+
+                sub.appendChild(
+                    listEditor(arr, function () { settings.params[p.key] = wl; }, {
+                        placeholder: '回车添加，支持用逗号一次添加多个',
+                        width: '320px',
+                        splitter: /[,，;；\n\r\t]+/,
+                        scroll: true,
+                        onCount: function (n) { subCount.textContent = n + ' 项'; }
+                    })
+                );
                 field.appendChild(sub);
             });
         }
@@ -524,7 +645,60 @@
             box.appendChild(sect);
         });
 
+        if (feature.actions && feature.actions.length) {
+            box.appendChild(renderActions(feature, settings));
+        }
+
         return box;
+    }
+
+    /** 参数区底部的操作按钮（如「测试 API Key」） */
+    function renderActions(meta, settings) {
+        var box = el('div', 'param-actions');
+        (meta.actions || []).forEach(function (act) {
+            var row = el('div', 'action-row');
+            var btn = el('button', null, act.label);
+            var out = el('span', 'sub', '');
+            btn.addEventListener('click', function () {
+                if (act.key === 'ai_test') { runAiTest(settings, btn, out); return; }
+                toast('未实现的操作：' + act.key, 'err');
+            });
+            row.appendChild(btn);
+            row.appendChild(out);
+            box.appendChild(row);
+        });
+        return box;
+    }
+
+    /** 测试 AI 接口连通性（用当前页面上的参数，不要求先保存） */
+    function runAiTest(settings, btn, out) {
+        var p = settings.params;
+        btn.disabled = true;
+        out.style.color = '';
+        out.textContent = '测试中…';
+        request('/ai/test', {
+            method: 'POST',
+            body: {
+                base_url: p.ai_base_url,
+                api_key: p.ai_api_key,
+                model: p.ai_model,
+                prompt: p.ai_prompt,
+                timeout_ms: p.ai_timeout_ms
+            }
+        }).then(function (r) {
+            out.style.color = 'var(--ok)';
+            out.textContent = '调用成功，模型回复 ' + JSON.stringify(r.reply) +
+                (r.verdict === null
+                    ? '（没解析出 1/0，请检查提示词）'
+                    : '（判定：' + (r.verdict ? '通过' : '拒绝') + '）');
+            toast('AI 接口可用', 'ok');
+        }).catch(function (e) {
+            out.style.color = 'var(--danger)';
+            out.textContent = '调用失败：' + (e && e.message ? e.message : '未知错误');
+            handleError(e, 'AI 测试失败：');
+        }).then(function () {
+            btn.disabled = false;
+        });
     }
 
     /* ---------------- 群选择器（下拉菜单） ---------------- */
@@ -712,6 +886,32 @@
         if (!state.global.global_admins.length) tags.appendChild(el('span', 'tag grey', '暂无管理员'));
     }
 
+    /* ---------------- 功能卡片顺序（拖动排序） ---------------- */
+
+    /** 当前正在拖动的卡片 */
+    var dragState = null;
+
+    /** 规范化后的功能顺序（过滤掉不存在的功能，缺失的补到末尾） */
+    function featureOrder(profile) {
+        var all = state.meta.features.map(function (f) { return f.key; });
+        var order = (Array.isArray(profile.feature_order) ? profile.feature_order : []).filter(function (k) {
+            return all.indexOf(k) >= 0;
+        });
+        all.forEach(function (k) { if (order.indexOf(k) < 0) order.push(k); });
+        return order;
+    }
+
+    /** 把 fromKey 移到 toKey 的位置 */
+    function reorderFeature(profile, fromKey, toKey) {
+        var order = featureOrder(profile);
+        var from = order.indexOf(fromKey);
+        var to = order.indexOf(toKey);
+        if (from < 0 || to < 0 || from === to) return;
+        order.splice(from, 1);
+        order.splice(to, 0, fromKey);
+        profile.feature_order = order;
+    }
+
     /** 折叠状态下显示的一行摘要 */
     function featureSummary(meta, settings) {
         if (!settings.enabled) return '未启用';
@@ -730,7 +930,7 @@
             profile.features[meta.key] = settings;
         }
         (meta.params || []).forEach(function (p) {
-            if (settings.params[p.key] === undefined) settings.params[p.key] = p.default;
+            if (settings.params[p.key] === undefined) settings.params[p.key] = cloneDefault(p.default);
         });
 
         var storeKey = profile.id + '|' + meta.key;
@@ -765,9 +965,14 @@
             sum.textContent = featureSummary(meta, settings);
         }));
         sectPerm.appendChild(el('div', 'sub', '成员名单（名单内成员始终可用，不受上面开关影响）'));
-        sectPerm.appendChild(listEditor(settings.allowed_users, function () {
-            sum.textContent = featureSummary(meta, settings);
-        }));
+        sectPerm.appendChild(
+            listEditor(settings.allowed_users, function () {
+                sum.textContent = featureSummary(meta, settings);
+            }, {
+                placeholder: 'QQ 号，回车添加，可用空格或逗号批量添加',
+                width: '300px'
+            })
+        );
         body.appendChild(sectPerm);
 
         var paramsBox = renderParams(meta, settings);
@@ -784,6 +989,39 @@
         head.addEventListener('click', function () {
             mod.classList.toggle('open');
             state.collapsed[storeKey] = !mod.classList.contains('open');
+        });
+
+        /* 拖动卡片头部调整顺序（只在同一条群配置内部生效） */
+        head.draggable = true;
+        head.addEventListener('dragstart', function (e) {
+            dragState = { profileId: profile.id, key: meta.key };
+            mod.classList.add('dragging');
+            if (e && e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                try { e.dataTransfer.setData('text/plain', meta.key); } catch (err) { /* 忽略 */ }
+            }
+        });
+        head.addEventListener('dragend', function () {
+            dragState = null;
+            mod.classList.remove('dragging');
+            mod.classList.remove('drop-target');
+        });
+        mod.addEventListener('dragover', function (e) {
+            if (!dragState || dragState.profileId !== profile.id || dragState.key === meta.key) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+            mod.classList.add('drop-target');
+        });
+        mod.addEventListener('dragleave', function () { mod.classList.remove('drop-target'); });
+        mod.addEventListener('drop', function (e) {
+            e.preventDefault();
+            mod.classList.remove('drop-target');
+            if (!dragState || dragState.profileId !== profile.id || dragState.key === meta.key) return;
+            reorderFeature(profile, dragState.key, meta.key);
+            dragState = null;
+            markDirty();
+            renderProfiles();
+            toast('已调整「' + meta.label + '」的位置，保存后生效');
         });
         return mod;
     }
@@ -836,9 +1074,14 @@
 
             card.appendChild(groupSelect(profile, function (n) { groupBadge.textContent = n + ' 个群'; }));
 
+            card.appendChild(el('div', 'sub', '拖动卡片标题可调整顺序，保存后生效；一行最多 3 张卡片，高度随内容自适应'));
+
             var modules = el('div', 'modules');
-            state.meta.features.forEach(function (meta) {
-                modules.appendChild(featureModule(profile, meta));
+            var metaByKey = {};
+            state.meta.features.forEach(function (m) { metaByKey[m.key] = m; });
+            featureOrder(profile).forEach(function (key) {
+                var meta = metaByKey[key];
+                if (meta) modules.appendChild(featureModule(profile, meta));
             });
             card.appendChild(modules);
             box.appendChild(card);
@@ -864,7 +1107,7 @@
                 box.appendChild(el('span', null, pair[0]));
                 grid.appendChild(box);
             });
-        }).catch(function (e) { toast('获取状态失败：' + e.message, 'err'); });
+        }).catch(function (e) { handleError(e, '获取状态失败：'); });
     }
 
     /* ---------------- 加载 / 保存 ---------------- */
@@ -885,7 +1128,7 @@
             renderStatus();
             clearDirty();
         }).catch(function (e) {
-            toast('加载失败：' + e.message, 'err');
+            handleError(e, '加载失败：');
         });
     }
 
@@ -913,10 +1156,30 @@
                 renderStatus();
                 toast('保存成功', 'ok');
             })
-            .catch(function (e) { toast('保存失败：' + e.message, 'err'); });
+            .catch(function (e) { handleError(e, '保存失败：'); });
     }
 
     /* ---------------- 事件绑定 ---------------- */
+
+    /* ---------------- 访问密码 ---------------- */
+
+    function submitPwd() {
+        savePwd($('#pwdInput').value);
+        $('#pwdInput').value = '';
+        $('#pwdMask').classList.remove('show');
+        loadAll();
+    }
+
+    $('#pwdOk').addEventListener('click', submitPwd);
+
+    $('#pwdInput').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitPwd(); }
+    });
+
+    $('#pwdClear').addEventListener('click', function () {
+        savePwd('');
+        askPassword();
+    });
 
     $('#btnReload').addEventListener('click', function () {
         if (!state.dirty) { loadAll(); return; }
@@ -957,7 +1220,7 @@
         };
         state.meta.features.forEach(function (f) {
             var params = {};
-            f.params.forEach(function (p) { params[p.key] = p.default; });
+            f.params.forEach(function (p) { params[p.key] = cloneDefault(p.default); });
             profile.features[f.key] = {
                 enabled: false,
                 allow_group_admin: false,
@@ -983,7 +1246,7 @@
                 toast(r.message, 'ok');
                 loadAll();
             })
-            .catch(function (e) { toast('导入失败：' + e.message, 'err'); })
+            .catch(function (e) { handleError(e, '导入失败：'); })
             .then(function () {
                 btn.disabled = false;
                 btn.textContent = '开始导入';

@@ -66,6 +66,19 @@ export const DEFAULT_JUDGE_WORDS = {
     double_negation: ['没说', '没有', '不是', '并非'],
 };
 
+/* ---------------- AI 判断相关常量 ---------------- */
+
+/** AI 判断提示词默认值：{question} / {answer} 会被替换 */
+export const DEFAULT_AI_PROMPT =
+    '你是一个正在审批 QQ 群入群申请的管理员。入群的问题是：“{question}”\n' +
+    '请你判断一下用户的回答是否有强烈表达出愿意的倾向。如果有，则只输出数字字符 1；如果没有，则输出 0。\n' +
+    '答案：“{answer}”';
+
+/** AI 判断失败时私聊管理员的通知文案 */
+export const DEFAULT_AI_FAIL_NOTIFY =
+    '⚠️ 加群 AI 审批出现问题，这条申请需要你手动处理\n' +
+    '群：{group}\n申请人：{user}\n问题：{question}\n答案：{answer}\n错误：{error}';
+
 /* ---------------- 可自定义提示文案 ---------------- */
 
 /** 文案参数统一构造：默认单行输入，长文本用 textarea */
@@ -171,6 +184,7 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
         textParam('join_off_echo', '已关闭时提示', '当前群的加群自动审批已经是关闭状态'),
         textParam('join_closed', '关闭成功', '已关闭群 {group} 的加群自动审批'),
         textParam('join_usage', '用法提示', '用法：join open 或 join close'),
+        textParam('ai_fail_notify', 'AI 审批异常私聊通知', DEFAULT_AI_FAIL_NOTIFY, 'textarea'),
     ],
     recall_stats: [
         textParam('recall_on_echo', '已开启时提示', '当前群的撤回消息统计已经是开启状态'),
@@ -199,6 +213,59 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
         textParam('recall_no_record', '没有撤回记录', '用户 {user} 在群 {group} 没有被撤回的记录'),
     ],
 };
+
+/* ---------------- 加群审核的 AI 判断参数 ---------------- */
+
+/** 走 OpenAI 兼容接口（DeepSeek 等）所需的参数 */
+export const AI_PARAMS: ParamMeta[] = [
+    {
+        key: 'ai_enabled',
+        label: '启用 AI 判断',
+        type: 'boolean',
+        default: false,
+        group: 'AI 判断',
+        hint: '开启后由 AI 判断入群答案：返回 1 → 通过，返回 0 → 拒绝；调用失败会私聊 Bot 管理员并跳过本次自动审批',
+    },
+    {
+        key: 'ai_base_url',
+        label: '接口地址',
+        type: 'text',
+        default: 'https://api.deepseek.com',
+        group: 'AI 判断',
+        hint: 'OpenAI 兼容接口的根地址，会自动拼 /chat/completions（DeepSeek：https://api.deepseek.com）',
+    },
+    {
+        key: 'ai_api_key',
+        label: 'API Key',
+        type: 'password',
+        default: '',
+        group: 'AI 判断',
+        hint: 'sk-... 建议同时在「插件配置」里设置页面访问密码，否则外部访问页面能读到这里的内容',
+    },
+    {
+        key: 'ai_model',
+        label: '模型',
+        type: 'text',
+        default: 'deepseek-chat',
+        group: 'AI 判断',
+        hint: '如 deepseek-chat / deepseek-flash / deepseek-v4-pro，按你的服务商文档填写',
+    },
+    {
+        key: 'ai_prompt',
+        label: '判断提示词',
+        type: 'textarea',
+        default: DEFAULT_AI_PROMPT,
+        group: 'AI 判断',
+        hint: '{question} 与 {answer} 会替换为申请时的问题和回答；要求模型只输出 1（同意）或 0（不同意）',
+    },
+    {
+        key: 'ai_timeout_ms',
+        label: '请求超时（毫秒）',
+        type: 'number',
+        default: 10000,
+        group: 'AI 判断',
+    },
+];
 
 /** 功能元信息（WebUI 依据此表渲染） */
 export const FEATURES: FeatureMeta[] = [
@@ -284,6 +351,7 @@ export const FEATURES: FeatureMeta[] = [
         usage: 'join open / join close\n开启后自动审批加群申请：已在其它官方群 → 拒绝；答案表达同意 → 通过',
         block: true,
         implemented: true,
+        actions: [{ key: 'ai_test', label: '测试 API Key' }],
         params: [
             { key: 'qq_level_threshold', label: 'QQ 等级阈值', type: 'number', default: 10, hint: '等级 ≥ 阈值立刻通过，否则延迟后通过' },
             { key: 'delay_seconds', label: '低等级延迟通过秒数', type: 'number', default: 1800 },
@@ -308,14 +376,17 @@ export const FEATURES: FeatureMeta[] = [
                 label: '语义判断词表',
                 type: 'wordlists',
                 default: DEFAULT_JUDGE_WORDS,
-                hint: '按「最先出现的信号」判断：命中同意词即通过，命中拒绝词或被否定的同意词即拒绝',
+                hint:
+                    '按「最先出现的信号」判断：命中同意词即通过，命中拒绝词或被否定的同意词即拒绝。' +
+                    '回车或点「添加」逐个添加，也支持用逗号一次粘贴多个；某项留空则使用内置默认词表。',
                 subKeys: [
-                    { key: 'agree', label: '同意词（每行一个）' },
+                    { key: 'agree', label: '同意词' },
                     { key: 'negation', label: '否定修饰词' },
                     { key: 'reject', label: '显式拒绝词' },
                     { key: 'double_negation', label: '双重否定触发词' },
                 ],
             },
+            ...AI_PARAMS,
         ],
     },
     {
