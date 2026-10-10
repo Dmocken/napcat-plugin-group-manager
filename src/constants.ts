@@ -216,16 +216,20 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
 
 /* ---------------- 加群审核的 AI 判断参数 ---------------- */
 
+/** 加群审核的三种判定模式 */
+export const JUDGE_MODES = {
+    /** 只用关键词词表判断 */
+    semantic: 'semantic',
+    /** 只用 AI 判断；AI 失败则通知管理员并保持待处理 */
+    ai: 'ai',
+    /** 优先 AI 判断；AI 失败自动降级为词表判断，同时通知管理员 */
+    aiFallback: 'ai_fallback',
+} as const;
+
+export type JudgeMode = (typeof JUDGE_MODES)[keyof typeof JUDGE_MODES];
+
 /** 走 OpenAI 兼容接口（DeepSeek 等）所需的参数 */
 export const AI_PARAMS: ParamMeta[] = [
-    {
-        key: 'ai_enabled',
-        label: '启用 AI 判断',
-        type: 'boolean',
-        default: false,
-        group: 'AI 判断',
-        hint: '开启后由 AI 判断入群答案：返回 1 → 通过，返回 0 → 拒绝；调用失败会私聊 Bot 管理员并跳过本次自动审批',
-    },
     {
         key: 'ai_base_url',
         label: '接口地址',
@@ -352,10 +356,65 @@ export const FEATURES: FeatureMeta[] = [
         block: true,
         implemented: true,
         actions: [{ key: 'ai_test', label: '测试 API Key' }],
+        actionGroup: 'AI 判断',
         params: [
-            { key: 'qq_level_threshold', label: 'QQ 等级阈值', type: 'number', default: 10, hint: '等级 ≥ 阈值立刻通过，否则延迟后通过' },
-            { key: 'delay_seconds', label: '低等级延迟通过秒数', type: 'number', default: 1800 },
-            { key: 'max_group_size', label: '群人数上限', type: 'number', default: 2000, hint: '达到上限直接拒绝，0 表示不检查' },
+            {
+                key: 'dup_check_enabled',
+                label: '重复加群检测',
+                type: 'boolean',
+                default: false,
+                group: '重复加群检测',
+                hint: '开启后，加群申请时若申请人已在下方勾选的群里，按「重复加群拒绝理由」拒绝。',
+            },
+            {
+                key: 'dup_check_groups',
+                label: '参与查重的群',
+                type: 'grouplist',
+                default: [],
+                group: '重复加群检测',
+                hint:
+                    '从 bot 已加入的群里勾选，默认不勾选；只查这里勾选的群，不会影响其它群配置。' +
+                    '检测时优先读成员快照，快照里没有的群再实时拉取成员。',
+            },
+            {
+                key: 'judge_mode',
+                label: '审核方式',
+                type: 'select',
+                default: JUDGE_MODES.semantic,
+                slot: 'permission',
+                options: [
+                    { value: JUDGE_MODES.semantic, label: '关键词审核' },
+                    { value: JUDGE_MODES.ai, label: 'AI 审核' },
+                    { value: JUDGE_MODES.aiFallback, label: 'AI 失败降级' },
+                ],
+                hint:
+                    '关键词审核：只用词表判断，不调用 AI；' +
+                    'AI 审核：只由模型判断，调用失败时私聊管理员并保持本次申请待处理；' +
+                    'AI 失败降级：优先用模型，失败时自动改用词表判断继续审批，并私聊管理员告知。',
+            },
+            {
+                key: 'qq_level_threshold',
+                label: 'QQ 等级阈值',
+                type: 'number',
+                default: 10,
+                group: '关键词检测',
+                hint: '等级 ≥ 阈值立刻通过，否则延迟后通过',
+            },
+            {
+                key: 'delay_seconds',
+                label: '低等级延迟通过秒数',
+                type: 'number',
+                default: 1800,
+                group: '关键词检测',
+            },
+            {
+                key: 'max_group_size',
+                label: '群人数上限',
+                type: 'number',
+                default: 2000,
+                group: '关键词检测',
+                hint: '达到上限直接拒绝，0 表示不检查',
+            },
             {
                 key: 'duplicate_reason',
                 label: '重复加群拒绝理由',
@@ -373,9 +432,10 @@ export const FEATURES: FeatureMeta[] = [
             ...(FEATURE_TEXT_PARAMS.join_verify ?? []),
             {
                 key: 'words',
-                label: '语义判断词表',
+                label: '关键词判断词表',
                 type: 'wordlists',
                 default: DEFAULT_JUDGE_WORDS,
+                group: '关键词检测',
                 hint:
                     '按「最先出现的信号」判断：命中同意词即通过，命中拒绝词或被否定的同意词即拒绝。' +
                     '回车或点「添加」逐个添加，也支持用逗号一次粘贴多个；某项留空则使用内置默认词表。',

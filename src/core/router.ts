@@ -17,7 +17,7 @@ import {
     segmentsOf,
 } from './messages';
 import { canToggle, canUse, isPluginEnabled } from './permission';
-import { ctx, logDebug, logError, stats } from './state';
+import { ctx, logDebug, logError, setActiveErrorContext, stats } from './state';
 
 export type PermissionKind = 'use' | 'toggle' | 'none';
 export type CommandScope = 'group' | 'private' | 'both';
@@ -142,9 +142,19 @@ export async function dispatchMessage(event: RawEventLike): Promise<boolean> {
         try {
             stats.commandHandled += 1;
             logDebug(`[群管助手] 执行命令 ${def.name} | 群 ${context.groupId} | 用户 ${context.userId}`);
+            // 挂上上下文，handler 内部 logError 也会记录到功能 / 群 / 用户
+            setActiveErrorContext({
+                source: 'command',
+                command: def.name,
+                feature: def.feature,
+                groupId: context.groupId,
+                userId: context.userId,
+            });
             await def.handler(context);
         } catch (e) {
             logError(`[群管助手] 命令 ${def.name} 执行失败:`, e);
+        } finally {
+            setActiveErrorContext(null);
         }
 
         if (def.block) break;

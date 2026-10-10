@@ -15,9 +15,16 @@ const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf-8'))
 
 await mkdir(dist, { recursive: true });
 
-// WebUI（单文件页面）
+// WebUI（React 工程构建出的单文件页面：JS/CSS 已内联进 index.html）
+const webuiBuild = path.join(root, 'src/webui/dist/index.html');
+if (!existsSync(webuiBuild)) {
+    throw new Error(
+        '[pack] 未找到 WebUI 构建产物 src/webui/dist/index.html，请先执行 `npm run build:webui`',
+    );
+}
 await rm(path.join(dist, 'webui'), { recursive: true, force: true });
-await cp(path.join(root, 'src/webui'), path.join(dist, 'webui'), { recursive: true });
+await mkdir(path.join(dist, 'webui'), { recursive: true });
+await cp(webuiBuild, path.join(dist, 'webui/index.html'));
 
 // 素材（图片等）：{image=/assets/xxx.png} 会从这里读取
 const assetsSrc = path.join(root, 'src/assets');

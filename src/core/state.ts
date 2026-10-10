@@ -9,7 +9,7 @@ import {
     defaultFeatureSettings,
 } from '../constants';
 import type { FeatureSettings, GlobalConfig, GroupProfile, PluginStore } from '../types';
-import { readJson, setDataDir, writeJson } from './store';
+import { appendErrorLine, readJson, readErrorLines, setDataDir, writeJson } from './store';
 
 const CONFIG_FILE = 'config.json';
 
@@ -198,9 +198,110 @@ export function logWarn(...args: unknown[]): void {
     ncCtx?.logger.warn(...args);
 }
 
+/** 错误记录里附带的信息：来自命令执行时设置的上下文 */
+export interface ErrorContext {
+    source?: 'command' | 'event' | 'api' | 'system';
+    command?: string;
+    feature?: string;
+    groupId?: string | number;
+    userId?: string | number;
+}
+
+export interface ErrorRecord {
+    /** 本地时间 YYYY-MM-DD HH:mm:ss */
+    time: string;
+    /** 记录产生时的插件启动时间戳，用于区分本次启动与历史记录 */
+    boot?: number;
+    source: string;
+    command: string;
+    feature: string;
+    groupId: string;
+    userId: string;
+    /** 错误摘要（单行，长文本截断） */
+    message: string;
+}
+
+/** 保留条数：内存与落盘一致 */
+const ERROR_KEEP = 50;
+
+const errorBuffer: ErrorRecord[] = [];
+
+/**
+ * 命令执行期间挂上上下文，handler 内部直接调用 logError 时也能带上
+ * 「哪个功能、哪个群、哪个用户」，无需逐个改动handler
+ */
+let activeErrorContext: ErrorContext | null = null;
+
+export function setActiveErrorContext(ctx: ErrorContext | null): void {
+    activeErrorContext = ctx;
+}
+
+function textOf(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (value instanceof Error) return value.message || String(value);
+    if (value === undefined || value === null) return '';
+    try {
+        return typeof value === 'object' ? JSON.stringify(value) : String(value);
+    } catch {
+        return String(value);
+    }
+}
+
+function stamp(offsetMinutes = 0): string {
+    const d = new Date(Date.now() - offsetMinutes * 60_000);
+    const p = (n: number): string => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(
+        d.getMinutes(),
+    )}:${p(d.getSeconds())}`;
+}
+
+/** 记录一条错误：内存保留最近 50 条，同时写入 data/errors.log */
+export function recordError(args: unknown[], context?: ErrorContext): void {
+    const ctxInfo = { ...(activeErrorContext ?? {}), ...(context ?? {}) };
+    const text = args
+        .map((item) => (item === undefined || item === null ? '' : textOf(item)))
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const record: ErrorRecord = {
+        time: stamp(),
+        /** 所属的插件运行实例（startedAt），用于区分本次启动与历史记录 */
+        boot: startedAt,
+        source: ctxInfo.source ?? 'system',
+        command: ctxInfo.command ?? '',
+        feature: ctxInfo.feature ?? '',
+        groupId: ctxInfo.groupId === undefined ? '' : String(ctxInfo.groupId),
+        userId: ctxInfo.userId === undefined ? '' : String(ctxInfo.userId),
+        message: text.length > 500 ? `${text.slice(0, 500)}…` : text,
+    };
+
+    errorBuffer.unshift(record);
+    if (errorBuffer.length > ERROR_KEEP) errorBuffer.length = ERROR_KEEP;
+    appendErrorLine(JSON.stringify(record));
+}
+
+/** 最近的错误记录（优先读落盘日志，跨重启可见） */
+export function recentErrors(limit = ERROR_KEEP): ErrorRecord[] {
+    const fromFile = readErrorLines(limit) as ErrorRecord[];
+    if (fromFile.length) return fromFile;
+    return errorBuffer.slice(0, limit);
+}
+
+/**
+ * 记录一条错误
+ * @param context 额外上下文；不传时自动沿用命令执行期间挂上的上下文
+ */
 export function logError(...args: unknown[]): void {
     stats.errors += 1;
-    ncCtx?.logger.error(...args);
+    const last = args[args.length - 1];
+    const context =
+        last && typeof last === 'object' && !(last instanceof Error)
+            ? (args.pop() as ErrorContext)
+            : undefined;
+    recordError(args, context);
+    ncCtx?.logger.error(...args, ...(context ? [context] : []));
 }
 
 export function logDebug(...args: unknown[]): void {

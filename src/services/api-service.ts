@@ -15,9 +15,15 @@ import type {
 import { DEFAULT_AI_PROMPT, DEFAULT_GLOBAL, DEFAULT_JUDGE_WORDS, FEATURES, FEATURE_KEYS } from '../constants';
 import { parseAiVerdict, testAiConnection } from './ai-judge';
 import { findProfileByGroup, newProfile, saveProfiles, validateProfiles } from '../core/profiles';
-import { getGlobal, getProfiles, stats, updateGlobal, uptimeText } from '../core/state';
+import {
+    clearSnapshot,
+    exportSnapshot,
+    importSnapshot,
+    readSnapshotFile,
+    snapshotInfo,
+} from './dup-check';
+import { getGlobal, getProfiles, recentErrors, startedAt, stats, updateGlobal, uptimeText } from '../core/state';
 import { getDataDir, listDataFiles } from '../core/store';
-import { importFromLegacy } from './legacy-import';
 
 function fail(res: PluginHttpResponse, code: number, message: string): void {
     res.status(code).json({ code: -1, message });
@@ -231,22 +237,64 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         res.json({ code: 0, data: { dataPath: getDataDir(), files: listDataFiles() } });
     });
 
-    /* ---------------- 旧配置导入 ---------------- */
+    /* ---------------- 错误记录 ---------------- */
 
-    post('/import', (req, res) => {
-        const body = req.body as { dir?: string; overwriteData?: boolean } | undefined;
-        const dir = typeof body?.dir === 'string' ? body.dir.trim() : '';
-        if (!dir) return fail(res, 400, '请填写旧插件 config 目录的绝对路径');
+    get('/errors', (req, res) => {
+        const limit = Math.min(Number(req.query?.limit) || 50, 200);
+        res.json({ code: 0, data: { records: recentErrors(limit), startedAt } });
+    });
 
+    /* ---------------- 重复加群检测 ---------------- */
+
+    get('/duplicates/snapshot', (_req, res) => {
+        res.json({ code: 0, data: snapshotInfo() });
+    });
+
+    post('/duplicates/export', async (req, res) => {
+        const body = req.body as { groupIds?: string[] } | undefined;
+        const list = Array.isArray(body?.groupIds) ? body.groupIds : [];
+        if (!list.length) return fail(res, 400, '请先勾选要导出的群');
         try {
-            const result = importFromLegacy(dir, body?.overwriteData === true);
-            if (!result.ok) return fail(res, 400, result.message);
-            ctx.logger.info(`[群管助手] ${result.message}`);
-            res.json({ code: 0, data: result });
+            const result = await exportSnapshot(list);
+            res.json({ code: 0, data: { ...result, snapshot: snapshotInfo() } });
         } catch (e) {
-            ctx.logger.error('[群管助手] 导入失败:', e);
+            ctx.logger.error('[群管助手] 导出群成员快照失败:', e);
             fail(res, 500, String(e));
         }
+    });
+
+    /* 下载快照文件（浏览器直接存盘，可用于备份 / 换机迁移） */
+    get('/duplicates/snapshot/file', (_req, res) => {
+        try {
+            const { filename, content } = readSnapshotFile();
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader(
+                'Content-Disposition',
+                `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+            );
+            res.send(content);
+        } catch (e) {
+            fail(res, 404, e instanceof Error ? e.message : String(e));
+        }
+    });
+
+    /* 导入快照文件内容（给 bot 不在的群补充成员名单） */
+    post('/duplicates/snapshot/import', (req, res) => {
+        const body = req.body as { content?: string } | undefined;
+        const content = typeof body?.content === 'string' ? body.content : '';
+        if (!content.trim()) return fail(res, 400, '没有读到文件内容');
+        try {
+            const result = importSnapshot(content);
+            res.json({ code: 0, data: { ...result, snapshot: snapshotInfo() } });
+        } catch (e) {
+            fail(res, 400, e instanceof Error ? e.message : String(e));
+        }
+    });
+
+    /* 清理快照文件 */
+    post('/duplicates/snapshot/clear', (_req, res) => {
+        const removed = clearSnapshot();
+        res.json({ code: 0, data: { cleared: removed, snapshot: snapshotInfo() } });
     });
 
     ctx.logger.debug('[群管助手] API 路由注册完成');

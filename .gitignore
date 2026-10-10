@@ -1,3 +1,7 @@
 node_modules/
 dist/
 *.log
+
+# 本地预览用的临时文件
+.tmp-*
+.preview-*

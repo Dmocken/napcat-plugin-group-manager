@@ -65,10 +65,18 @@ export type ParamType =
     | 'password'
     | 'textarea'
     | 'numberlist'
-    | 'wordlists';
+    | 'wordlists'
+    | 'grouplist'
+    | 'select';
 
 export interface WordListMeta {
     key: string;
+    label: string;
+}
+
+/** type = select 时的候选项 */
+export interface ParamOption {
+    value: string;
     label: string;
 }
 
@@ -82,6 +90,13 @@ export interface ParamMeta {
     group?: string;
     /** type = wordlists 时，子词表定义 */
     subKeys?: WordListMeta[];
+    /** type = select 时，候选项 */
+    options?: ParamOption[];
+    /**
+     * 渲染位置：'permission' 表示该参数不是普通参数，
+     * 而是和「允许群主/ 管理员」「成员名单」放在一起（WebUI 的「使用权限」区）
+     */
+    slot?: 'permission';
 }
 
 /** 参数区下方的操作按钮（如「测试 API Key」） */
@@ -104,6 +119,11 @@ export interface FeatureMeta {
     params: ParamMeta[];
     /** 参数区底部的操作按钮 */
     actions?: FeatureAction[];
+    /**
+     * 操作按钮归属的参数分组名；缺省时按钮渲染在参数区底部。
+     * 例：加群审核把「测试 API Key」放进「AI 判断」分组内
+     */
+    actionGroup?: string;
 }
 
 /* ---------------- OneBot 事件（宽松类型，只声明本插件用到的字段） ---------------- */

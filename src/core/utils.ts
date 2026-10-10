@@ -78,6 +78,18 @@ export function paramString(params: Record<string, unknown>, key: string, def: s
     return typeof v === 'string' && v ? v : def;
 }
 
+/** 从功能参数里取枚举值（select 类型）；不在候选内则回退默认 */
+export function paramSelect(
+    params: Record<string, unknown>,
+    key: string,
+    def: string,
+    allowed: readonly string[],
+): string {
+    const v = params?.[key];
+    const s = typeof v === 'string' ? v.trim() : '';
+    return s && allowed.includes(s) ? s : def;
+}
+
 /** 从 settings.params 取数字数组 */
 export function paramNumberList(params: Record<string, unknown>, key: string, def: number[]): number[] {
     const v = params?.[key];

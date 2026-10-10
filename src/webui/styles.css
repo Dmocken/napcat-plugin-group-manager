@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+/* 纯黑白中性色板：整站不使用任何彩色。
+   层级只靠明度、边框粗细与字重区分；「成功 / 危险 / 警告」等语义
+   一律改用反色块 + 图标 + 文案表达，不依赖色相。 */
+@theme {
+    --color-canvas: #0a0a0a;
+    --color-surface: #121212;
+    --color-surface-2: #191919;
+    --color-surface-3: #232323;
+    --color-line: #2a2a2a;
+    --color-line-strong: #454545;
+    --color-ink: #fafafa;
+    --color-ink-2: #d6d6d6;
+    --color-muted: #a1a1a1;
+    --color-subtle: #6f6f6f;
+
+    /* 反色：主操作按钮、toast、危险确认 */
+    --color-inverse: #fafafa;
+    --color-inverse-ink: #0a0a0a;
+
+    --radius-control: 6px;
+    --radius-panel: 10px;
+    --radius-card: 12px;
+
+    --shadow-pop: 0 16px 40px #000000a6;
+    --shadow-modal: 0 24px 64px #000000b3;
+}
+
+@layer base {
+    html {
+        color-scheme: dark;
+    }
+
+    body {
+        margin: 0;
+        background-color: var(--color-canvas);
+        color: var(--color-ink);
+        font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    /* 仅 PC 端使用：滚动条低调处理，不抢视觉 */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: #2f2f2f;
+        border-radius: 999px;
+        border: 2px solid var(--color-canvas);
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: #454545;
+    }
+
+    ::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+
+    ::selection {
+        background: #fafafa;
+        color: #0a0a0a;
+    }
+
+    /* 键盘聚焦统一为白色描边，鼠标点击不显示 */
+    :focus-visible {
+        outline: 1px solid var(--color-line-strong);
+        outline-offset: 2px;
+    }
+
+    /* 数字 / 路径 / QQ 号统一等宽，便于纵向比对 */
+    code,
+    kbd,
+    .font-mono-num {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+    }
+}
+
+@keyframes gm-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes gm-pop-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes gm-rise-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes gm-toast-in {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+@keyframes gm-shimmer {
+    from {
+        background-position: 200% 0;
+    }
+    to {
+        background-position: -200% 0;
+    }
+}
+
+.gm-overlay {
+    animation: gm-fade-in 0.16s ease;
+}
+
+.gm-content {
+    animation: gm-pop-in 0.16s ease;
+}
+
+.gm-toast {
+    animation: gm-toast-in 0.18s ease;
+}
+
+.gm-rise {
+    animation: gm-rise-in 0.22s ease;
+}
+
+.gm-skeleton {
+    background-image: linear-gradient(90deg, #1c1c1c 25%, #262626 37%, #1c1c1c 63%);
+    background-size: 200% 100%;
+    animation: gm-shimmer 1.4s ease-in-out infinite;
+}
+
+/* 危险操作的提示条：黑白体系里用「加粗左条 + 反色标题」表示强调 */
+.gm-stripe {
+    background-image: repeating-linear-gradient(
+        135deg,
+        #232323 0 6px,
+        #1a1a1a 6px 12px
+    );
+}

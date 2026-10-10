@@ -3,28 +3,45 @@
  *
  * 收到加群申请（request/group/add）时自动审批：
  *   1. 群人数达到上限 → 拒绝
- *   2. 已在其它官方群 → 拒绝（依赖 group_members.json，由 /export 工具生成，可选）
+ *   2. 已在「参与查重的群」里 → 拒绝（范围按群配置，可在功能参数里开关与勾选）
  *   3. 答案表达「同意」→ 通过（QQ 等级 >= 阈值立刻通过，否则延迟指定秒数后通过）
  *   4. 其它情况 → 拒绝
  *
  * 判断改为关键词模式（不再依赖 jieba），词表可在插件配置页按群编辑。
  */
 
-import { DEFAULT_AI_FAIL_NOTIFY, DEFAULT_AI_PROMPT } from '../constants';
+import { DEFAULT_AI_FAIL_NOTIFY, DEFAULT_AI_PROMPT, JUDGE_MODES, type JudgeMode } from '../constants';
 import { callAiChat, parseAiVerdict } from '../services/ai-judge';
+import { checkDuplicate } from '../services/dup-check';
 import { resolveWords, judgeAnswer } from '../services/text-judge';
 import { registerRequest } from '../core/events';
 import { callAction, sendGroup, sendPrivate } from '../core/messages';
 import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { getGlobal, logDebug, logError, logWarn } from '../core/state';
-import { readJson } from '../core/store';
 import { paramText } from '../core/texts';
 import { schedule } from '../core/timers';
-import { paramNumber, paramString } from '../core/utils';
+import { paramNumber, paramSelect, paramString } from '../core/utils';
 
-/** 旧版 /export 生成的群成员名单文件（存在才做重复加群检查） */
-const MEMBERS_FILE = 'group_members.json';
+const JUDGE_MODE_VALUES: readonly string[] = [
+    JUDGE_MODES.semantic,
+    JUDGE_MODES.ai,
+    JUDGE_MODES.aiFallback,
+];
+
+/**
+ * 读取审核方式；兼容旧配置 —— 只有 ai_enabled 时按开关推导：
+ *   开启 → AI 审核（保持待处理）；关闭 → 关键词审核
+ */
+function resolveJudgeMode(params: Record<string, unknown>): JudgeMode {
+    const explicit = paramSelect(params, 'judge_mode', JUDGE_MODES.semantic, JUDGE_MODE_VALUES);
+    if (params.judge_mode !== undefined && params.judge_mode !== null && String(params.judge_mode).trim()) {
+        return explicit as JudgeMode;
+    }
+    // ai_enabled 兼容：兼容早期存成 0/1 的值
+    const legacy = params.ai_enabled === true || Number(params.ai_enabled) === 1;
+    return legacy ? JUDGE_MODES.ai : JUDGE_MODES.semantic;
+}
 
 registerCommand({
     name: 'join',
@@ -169,19 +186,30 @@ registerRequest('group', 'join_verify', async (ctx) => {
         }
     }
 
-    /* 2. 重复加群检查（需要 group_members.json） */
-    try {
-        const members = readJson<Record<string, string[]>>(MEMBERS_FILE, {});
-        const hasOtherGroup = Object.entries(members).some(
-            ([gid, ids]) =>
-                String(gid) !== String(groupId) && Array.isArray(ids) && ids.includes(String(userId)),
-        );
-        if (hasOtherGroup) {
-            await respond(false, paramString(params, 'duplicate_reason', '您已加入其它官方群，请勿重复加群！'));
-            return;
+    /* 2. 重复加群检测：范围按本配置「加群审核 → 参与查重的群」来，与其它群配置互不影响 */
+    const dupEnabled = params.dup_check_enabled === true || Number(params.dup_check_enabled) === 1;
+    if (dupEnabled) {
+        const dupGroups = (Array.isArray(params.dup_check_groups) ? params.dup_check_groups : [])
+            .map((g) => String(g).trim())
+            .filter(Boolean);
+        if (!dupGroups.length) {
+            logDebug('[群管助手] 加群审核：已开启重复加群检测，但没有勾选任何群，本次跳过');
+        } else {
+            const dupResult = await checkDuplicate(dupGroups, groupId, userId);
+            if (dupResult.warning) {
+                logWarn(`[群管助手] 加群审核：${dupResult.warning}`);
+            }
+            if (dupResult.hit) {
+                logDebug(
+                    `[群管助手] 加群审核：检测到 ${userId} 已在群 ${dupResult.groupId}（${dupResult.used}）`,
+                );
+                await respond(
+                    false,
+                    paramString(params, 'duplicate_reason', '您已加入其它官方群，请勿重复加群！'),
+                );
+                return;
+            }
         }
-    } catch {
-        /* 文件不存在或格式错误则跳过 */
     }
 
     /* 3. 解析问题与答案（comment 形如「问题：xxx\n答案：yyy」） */
@@ -197,15 +225,21 @@ registerRequest('group', 'join_verify', async (ctx) => {
         if (onlyAnswer) answerText = onlyAnswer[1].trim();
     }
 
-    /* 4. 判断：开启 AI 时优先用 AI，失败按配置回退关键词 */
+    /* 4. 判断：按审核方式走关键词 / AI / AI 失败降级三条路径 */
     const words = resolveWords(params.words);
-    let approved = judgeAnswer(answerText, words);
-    let how = '关键词';
-    logDebug(`[群管助手] 加群审核：关键词判定=${approved}（答案 "${answerText}"）`);
+    const semanticVerdict = judgeAnswer(answerText, words);
+    logDebug(`[群管助手] 加群审核：词表判定=${semanticVerdict}（答案 "${answerText}"）`);
 
-    // 开关型参数；兼容早期存成 0/1 的旧值
-    const aiEnabled = params.ai_enabled === true || Number(params.ai_enabled) === 1;
-    if (aiEnabled) {
+    // 兼容旧配置：judge_mode 缺失时按旧的 ai_enabled 开关推导
+    const mode = resolveJudgeMode(params);
+
+    let approved: boolean;
+    let how: string;
+
+    if (mode === JUDGE_MODES.semantic) {
+        approved = semanticVerdict;
+        how = '关键词';
+    } else {
         const call = await callAiChat(
             {
                 baseUrl: paramString(params, 'ai_base_url', 'https://api.deepseek.com'),
@@ -218,35 +252,46 @@ registerRequest('group', 'join_verify', async (ctx) => {
             answerText,
         );
 
+        let aiVerdict: boolean | null = null;
+        let failReason = '';
         if (!call.ok) {
-            // AI 判断失败：私聊 Bot 管理员，本次申请保持待处理，不做自动审批
-            logError(`[群管助手] 加群审核：AI 判断失败（${call.error}），已通知管理员手动处理`);
+            failReason = call.error;
+        } else {
+            aiVerdict = parseAiVerdict(call.content);
+            if (aiVerdict === null) {
+                failReason = `模型回复无法解析出 1/0：${JSON.stringify(call.content.slice(0, 120))}`;
+            }
+        }
+
+        if (aiVerdict !== null) {
+            approved = aiVerdict;
+            how = 'AI';
+        } else if (mode === JUDGE_MODES.aiFallback) {
+            // 降级：改用词表判断继续审批，同时通知管理员
+            approved = semanticVerdict;
+            how = 'AI 失败降级';
+            logError(
+                `[群管助手] 加群审核：AI 判断失败（${failReason}），已降级为词表判断（结果=${approved}）并通知管理员`,
+            );
             await notifyAiFailure(params, {
                 group: groupId,
                 user: userId,
                 question: questionText,
                 answer: answerText,
-                error: call.error,
+                error: `${failReason}（已降级为关键词审核，判定：${approved ? '通过' : '拒绝'}）`,
             });
-            return;
-        }
-
-        const verdict = parseAiVerdict(call.content);
-        if (verdict === null) {
-            const reason = `模型回复无法解析出 1/0：${JSON.stringify(call.content.slice(0, 120))}`;
-            logError(`[群管助手] 加群审核：${reason}，已通知管理员手动处理`);
+        } else {
+            //纯 AI 模式：保持待处理，等管理员手动处理
+            logError(`[群管助手] 加群审核：AI 判断失败（${failReason}），已通知管理员手动处理`);
             await notifyAiFailure(params, {
                 group: groupId,
                 user: userId,
                 question: questionText,
                 answer: answerText,
-                error: reason,
+                error: failReason,
             });
             return;
         }
-
-        approved = verdict;
-        how = 'AI';
     }
 
     if (!approved) {

@@ -40,6 +40,50 @@ export function writeJson(name: string, data: unknown): void {
     fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
 }
 
+/* ---------------- 错误日志（errors.log，按行 JSON） ---------------- */
+
+const ERROR_LOG = 'errors.log';
+const ERROR_LOG_MAX_BYTES = 256 * 1024;
+
+/** 追加一条错误记录；文件过大时重写，只保留最近若干行 */
+export function appendErrorLine(line: string): void {
+    if (!dataDir) return;
+    const file = dataFile(ERROR_LOG);
+    try {
+        if (fs.existsSync(file) && fs.statSync(file).size > ERROR_LOG_MAX_BYTES) {
+            const kept = fs.readFileSync(file, 'utf-8').split('\n').slice(-100).join('\n');
+            fs.writeFileSync(file, `${kept}\n`, 'utf-8');
+        }
+        fs.appendFileSync(file, `${line}\n`, 'utf-8');
+    } catch {
+        /* 日志写入失败不影响主流程 */
+    }
+}
+
+/** 读取最近 limit 条错误记录（按时间倒序） */
+export function readErrorLines(limit: number): unknown[] {
+    const file = dataFile(ERROR_LOG);
+    if (!fs.existsSync(file)) return [];
+    try {
+        return fs
+            .readFileSync(file, 'utf-8')
+            .split('\n')
+            .filter(Boolean)
+            .slice(-limit)
+            .reverse()
+            .map((line) => {
+                try {
+                    return JSON.parse(line);
+                } catch {
+                    return null;
+                }
+            })
+            .filter((item): item is unknown => item !== null);
+    } catch {
+        return [];
+    }
+}
+
 export interface DataFileInfo {
     name: string;
     size: number;
