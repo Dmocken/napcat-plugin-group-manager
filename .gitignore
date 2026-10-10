@@ -6,4 +6,3 @@ dist/
 # 本地预览用的临时文件
 .tmp-*
 .preview-*
-deploy.sh
