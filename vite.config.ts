@@ -3,7 +3,10 @@ import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
     build: {
-        outDir: 'dist',
+        // 插件产物先落到暂存目录，由 scripts/pack.mjs 再和 WebUI 产物一起组装成 dist/。
+        // 这样单独跑 `vite build` 不会把已经组装好的 dist/ 清空（outDir 若是 dist，
+        // 又带 emptyOutDir，一旦 WebUI 构建失败，dist/ 就会停在缺文件的半成品状态）。
+        outDir: '.build/plugin',
         emptyOutDir: true,
         target: 'esnext',
         minify: false,

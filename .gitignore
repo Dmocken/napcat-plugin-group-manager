@@ -1,7 +1,9 @@
 node_modules/
 dist/
+.build/
 *.log
 
 # 本地预览用的临时文件
 .tmp-*
 .preview-*
+deploy.sh

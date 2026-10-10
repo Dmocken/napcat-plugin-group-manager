@@ -8,12 +8,13 @@
   "type": "module",
   "main": "index.mjs",
   "scripts": {
-    "build": "vite build && vite build -c vite.webui.config.ts && node scripts/pack.mjs",
+    "build": "node scripts/preflight.mjs && vite build && vite build -c vite.webui.config.ts && node scripts/pack.mjs",
+    "deploy": "node scripts/preflight.mjs && vite build && vite build -c vite.webui.config.ts && node scripts/pack.mjs --deploy",
     "build:plugin": "vite build",
     "build:webui": "vite build -c vite.webui.config.ts",
+    "pack": "node scripts/pack.mjs",
     "dev:webui": "vite -c vite.webui.config.ts",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.webui.json --noEmit",
-    "deploy": "npm run build && node scripts/pack.mjs --deploy"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.webui.json --noEmit"
   },
   "devDependencies": {
     "@radix-ui/react-collapsible": "^1.1.21",
