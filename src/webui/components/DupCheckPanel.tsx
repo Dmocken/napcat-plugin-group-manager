@@ -94,7 +94,7 @@ export function DupCheckPanel(): React.JSX.Element {
             <div className="space-y-5 p-5">
                 <RowField
                     label="导出群范围"
-                    hint="可多选；只能导出 bot 已加入的群。这里只是导出名单，是否参与查重由「群配置 → 加群审核」决定"
+                    hint="可多选；只能导出 bot 已加入的群。导出时会把群名一并记下来，之后在「参与查重的群」里勾选时就能看到群名。这里只是导出名单，是否参与查重由「群配置 → 加群审核」决定"
                 >
                     <GroupPicker
                         selected={scope}

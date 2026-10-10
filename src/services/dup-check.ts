@@ -30,6 +30,8 @@ export const SNAPSHOT_STALE_MS = 6 * 60 * 60 * 1000;
 export interface DupSnapshot {
     updatedAt: number;
     groups: Record<string, string[]>;
+    /** 群号 → 群名；导出时一并记录，供前端在勾选列表里显示 */
+    names: Record<string, string>;
 }
 
 export interface DupSnapshotInfo {
@@ -40,6 +42,8 @@ export interface DupSnapshotInfo {
     stale: boolean;
     /** 快照里记录了成员名单的群号（供前端在「参与查重的群」里勾选） */
     groupIds: string[];
+    /** 快照里记录到的群名（群号 → 群名）；没有记录到的群不会出现 */
+    groupNames: Record<string, string>;
 }
 
 export interface DupCheckResult {
@@ -69,7 +73,17 @@ function normalizeGroups(input: Record<string, string[]>): Record<string, string
     return out;
 }
 
-/** 读取快照：新格式优先，旧文件回退 */
+/** 规范化「群号 → 群名」，丢掉空值 */
+function normalizeNames(input: Record<string, string> | undefined): Record<string, string> {
+    const out: Record<string, string> = {};
+    Object.entries(input ?? {}).forEach(([gid, name]) => {
+        const value = String(name ?? '').trim();
+        if (gid && value) out[String(gid)] = value;
+    });
+    return out;
+}
+
+/** 读取快照：新格式优先，旧文件回退（旧文件没有群名） */
 export function readSnapshot(): DupSnapshot | null {
     const raw = readJsonFile(dataFile(SNAPSHOT_FILE));
     if (raw && typeof raw === 'object') {
@@ -78,21 +92,37 @@ export function readSnapshot(): DupSnapshot | null {
             r.groups && typeof r.groups === 'object'
                 ? (r.groups as Record<string, string[]>)
                 : (raw as Record<string, string[]>);
+        const names =
+            r.names && typeof r.names === 'object'
+                ? (r.names as Record<string, string>)
+                : undefined;
         return {
             updatedAt: typeof r.updatedAt === 'number' ? r.updatedAt : 0,
             groups: normalizeGroups(groups),
+            names: normalizeNames(names),
         };
     }
 
     const legacy = readJsonFile(dataFile(LEGACY_FILE));
     if (legacy && typeof legacy === 'object') {
-        return { updatedAt: 0, groups: normalizeGroups(legacy as Record<string, string[]>) };
+        return {
+            updatedAt: 0,
+            groups: normalizeGroups(legacy as Record<string, string[]>),
+            names: {},
+        };
     }
     return null;
 }
 
-export function writeSnapshot(groups: Record<string, string[]>): DupSnapshot {
-    const snapshot: DupSnapshot = { updatedAt: Date.now(), groups: normalizeGroups(groups) };
+export function writeSnapshot(
+    groups: Record<string, string[]>,
+    names: Record<string, string> = {},
+): DupSnapshot {
+    const snapshot: DupSnapshot = {
+        updatedAt: Date.now(),
+        groups: normalizeGroups(groups),
+        names: normalizeNames(names),
+    };
     fs.writeFileSync(dataFile(SNAPSHOT_FILE), JSON.stringify(snapshot), 'utf-8');
     return snapshot;
 }
@@ -100,13 +130,27 @@ export function writeSnapshot(groups: Record<string, string[]>): DupSnapshot {
 export function snapshotInfo(): DupSnapshotInfo {
     const snap = readSnapshot();
     if (!snap) {
-        return { exists: false, updatedAt: 0, groups: 0, members: 0, stale: false, groupIds: [] };
+        return {
+            exists: false,
+            updatedAt: 0,
+            groups: 0,
+            members: 0,
+            stale: false,
+            groupIds: [],
+            groupNames: {},
+        };
     }
     let members = 0;
     Object.values(snap.groups).forEach((ids) => {
         members += ids.length;
     });
     const groupIds = Object.keys(snap.groups);
+    // 只回传确实有成员名单的群的群名
+    const groupNames: Record<string, string> = {};
+    groupIds.forEach((gid) => {
+        const name = snap.names[gid];
+        if (name) groupNames[gid] = name;
+    });
     return {
         exists: true,
         updatedAt: snap.updatedAt,
@@ -115,6 +159,7 @@ export function snapshotInfo(): DupSnapshotInfo {
         // 没有时间戳的旧文件视为已过期
         stale: !snap.updatedAt || Date.now() - snap.updatedAt > SNAPSHOT_STALE_MS,
         groupIds,
+        groupNames,
     };
 }
 
@@ -200,13 +245,38 @@ export async function checkDuplicate(
     return { hit: false, used: 'snapshot' };
 }
 
-/** 导出勾选群的成员快照（WebUI 按钮触发） */
+/** 拉取全部群号 → 群名（best-effort：取不到就当作没有群名，不影响快照本身） */
+async function fetchGroupNames(): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    try {
+        const list = await callAction<Array<Record<string, unknown>>>('get_group_list', {});
+        if (Array.isArray(list)) {
+            list.forEach((g) => {
+                const id = g?.group_id ?? g?.groupId;
+                const name = g?.group_name ?? g?.groupName;
+                if (id === undefined || id === null || name === undefined || name === null) return;
+                const gid = String(id).trim();
+                const value = String(name).trim();
+                if (gid && value) out[gid] = value;
+            });
+        }
+    } catch (e) {
+        logDebug('[群管助手] 获取群列表失败，快照将不记录群名', e);
+    }
+    return out;
+}
+
+/** 导出勾选群的成员快照（WebUI 按钮触发），顺带记下群名，方便前端勾选时显示 */
 export async function exportSnapshot(
     groupIds: string[],
 ): Promise<{ groups: number; members: number; failed: { groupId: string; error: string }[] }> {
     const collected: Record<string, string[]> = {};
+    const names: Record<string, string> = {};
     const failed: { groupId: string; error: string }[] = [];
     let members = 0;
+
+    // 群名只在导出时拉一次，用于给勾选列表显示
+    const knownNames = await fetchGroupNames();
 
     for (const raw of groupIds) {
         const gid = String(raw).trim();
@@ -215,13 +285,15 @@ export async function exportSnapshot(
             const ids = await fetchMembers(gid, false);
             collected[gid] = [...ids];
             members += ids.size;
+            const name = knownNames[gid];
+            if (name) names[gid] = name;
         } catch (e) {
             failed.push({ groupId: gid, error: e instanceof Error ? e.message : String(e) });
             logWarn(`[群管助手] 导出群 ${gid} 成员失败：`, e);
         }
     }
 
-    writeSnapshot(collected);
+    writeSnapshot(collected, names);
     memberCache.clear();
     return { groups: Object.keys(collected).length, members, failed };
 }
@@ -246,7 +318,9 @@ export function readSnapshotFile(): { filename: string; content: string } {
 /**
  * 导入快照文件内容
  *
- * 兼容两种格式：新格式 { updatedAt, groups:{ gid:[qq] } } 与旧格式 { gid:[qq] }。
+ * 兼容两种格式：
+ *   新格式 { updatedAt, groups:{ gid:[qq] }, names:{ gid: 群名 } }
+ *   旧格式 { gid:[qq] }（没有群名，前端会退化成显示群号）
  * 主要用于给「bot 不在、无法实时拉取成员」的群补充成员名单。
  *
  * 采用合并语义：导入文件里的群覆盖同名群，快照里已有的其它群保持不变。
@@ -280,9 +354,18 @@ export function importSnapshot(content: string): { groups: number; members: numb
     const incoming = normalizeGroups(source);
     if (!Object.keys(incoming).length) throw new Error('快照里没有任何群成员数据');
 
+    const incomingNames = normalizeNames(
+        obj.names && typeof obj.names === 'object' && !Array.isArray(obj.names)
+            ? (obj.names as Record<string, string>)
+            : undefined,
+    );
+
     // 合并：导入的群覆盖同名群，快照里其它群保留
-    const current = readSnapshot()?.groups ?? {};
-    const snapshot = writeSnapshot({ ...current, ...incoming });
+    const current = readSnapshot();
+    const snapshot = writeSnapshot(
+        { ...(current?.groups ?? {}), ...incoming },
+        { ...(current?.names ?? {}), ...incomingNames },
+    );
     memberCache.clear();
     return { groups: Object.keys(incoming).length, members, updatedAt: snapshot.updatedAt };
 }

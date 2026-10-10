@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+
 import { GroupPicker } from '@/components/GroupPicker';
 import { TagListEditor } from '@/components/TagListEditor';
 import { Button } from '@/components/ui/button';
@@ -18,14 +20,24 @@ function GroupListField({
     value: unknown;
     onChange: (value: unknown) => void;
 }): React.JSX.Element {
-    const extraGroupIds = useStore((s) => s.dupSnapshot?.groupIds);
+    const snapshot = useStore((s) => s.dupSnapshot);
     const list = Array.isArray(value) ? value.map(String) : [];
+
+    // 快照里记录过的群（含 bot 不在的群）也列出来，并带上群名
+    const extraGroups = useMemo(
+        () =>
+            (snapshot?.groupIds ?? []).map((gid) => ({
+                gid,
+                name: snapshot?.groupNames?.[gid] ?? '',
+            })),
+        [snapshot],
+    );
 
     return (
         <GroupPicker
             selected={list}
             onChange={(next) => onChange(next)}
-            extraGroupIds={extraGroupIds}
+            extraGroups={extraGroups}
             triggerLabel="选择参与查重的群"
             emptyHint="还没有选择群 —— 默认不勾选，需要手动选择。"
         />

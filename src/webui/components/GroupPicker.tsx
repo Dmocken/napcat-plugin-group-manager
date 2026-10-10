@@ -1,44 +1,42 @@
 import { Check, ChevronDown, Search, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tag } from '@/components/ui/tag';
-import { cn, isQq } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { useStore } from '@/store';
 
 interface GroupOption {
     gid: string;
     name: string;
     count: number;
-    /** 来自快照 / 手动添加，不在 bot 已加入的群列表里 */
+    /** 来自成员快照，不在 bot 已加入的群列表里 */
     external: boolean;
 }
 
 /**
- * 群多选：搜索多选 + 手动填群号（受控组件），选中项以胶囊展示。
- * extraGroupIds 用于把「bot 不在、但成员快照里有记录」的群也列出来供勾选。
+ * 群多选：搜索 + 勾选（受控组件），选中项以胶囊展示。
+ * extraGroups 用于把「bot 不在、但成员快照里有记录」的群也列出来供勾选（带「快照」标记）。
  */
 export function GroupPicker({
     selected,
     onChange,
-    extraGroupIds,
+    extraGroups,
     triggerLabel = '选择群',
     emptyHint = '还没有选择群。',
 }: {
     selected: string[];
     onChange: (next: string[]) => void;
-    extraGroupIds?: string[];
+    /** 额外可选项（如来自成员快照的群），会显示「快照」标记 */
+    extraGroups?: { gid: string; name?: string }[];
     triggerLabel?: string;
     emptyHint?: string;
 }): React.JSX.Element {
     const groups = useStore((s) => s.groups);
-    const toast = useStore((s) => s.toast);
 
     const [open, setOpen] = useState(false);
     const [keyword, setKeyword] = useState('');
-    const [manual, setManual] = useState('');
 
     const options = useMemo<GroupOption[]>(() => {
         const list: GroupOption[] = groups.map((g) => ({
@@ -48,14 +46,19 @@ export function GroupPicker({
             external: false,
         }));
         const known = new Set(list.map((item) => item.gid));
-        (extraGroupIds ?? []).forEach((id) => {
-            const gid = String(id);
+        (extraGroups ?? []).forEach((item) => {
+            const gid = String(item.gid ?? '').trim();
             if (!gid || known.has(gid)) return;
             known.add(gid);
-            list.push({ gid, name: '快照里的群', count: 0, external: true });
+            list.push({
+                gid,
+                name: (item.name ?? '').trim() || '未命名群',
+                count: 0,
+                external: true,
+            });
         });
         return list;
-    }, [groups, extraGroupIds]);
+    }, [groups, extraGroups]);
 
     const filtered = useMemo(() => {
         const kw = keyword.trim().toLowerCase();
@@ -70,20 +73,6 @@ export function GroupPicker({
 
     const toggle = (gid: string): void => {
         onChange(selected.includes(gid) ? selected.filter((x) => x !== gid) : [...selected, gid]);
-    };
-
-    const submitManual = (): void => {
-        const value = manual.trim();
-        if (!isQq(value)) {
-            toast('请输入正确的群号', 'err');
-            return;
-        }
-        if (selected.includes(value)) {
-            toast('该群已在列表里');
-            return;
-        }
-        onChange([...selected, value]);
-        setManual('');
     };
 
     return (
@@ -131,7 +120,7 @@ export function GroupPicker({
                     <div className="mt-2 max-h-[280px] overflow-auto">
                         {filtered.length === 0 ? (
                             <p className="px-1 py-3 text-xs text-subtle">
-                                没有匹配的群 —— 可以在下方手动填群号（需要成员快照里已有该群的数据）。
+                                没有匹配的群 —— 只能选 bot 已加入的群，或成员快照里记录过的群。
                             </p>
                         ) : (
                             filtered.map((item) => {
@@ -163,33 +152,14 @@ export function GroupPicker({
                                             {item.count ? ` · ${item.count} 人` : ''}
                                         </span>
                                         {item.external ? (
-                                            <span className="ml-auto shrink-0 text-[11px] text-subtle">
-                                                来自快照
+                                            <span className="ml-auto shrink-0 rounded-full border border-line px-1.5 text-[11px] leading-4 text-subtle">
+                                                快照
                                             </span>
                                         ) : null}
                                     </button>
                                 );
                             })
                         )}
-                    </div>
-
-                    <div className="mt-2 flex items-center gap-2 border-t border-line pt-2.5">
-                        <span className="shrink-0 text-xs text-subtle">bot 不在的群：</span>
-                        <Input
-                            className="h-8 w-[160px] font-mono-num"
-                            value={manual}
-                            placeholder="手动填群号"
-                            onChange={(event) => setManual(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    submitManual();
-                                }
-                            }}
-                        />
-                        <Button size="sm" onClick={submitManual}>
-                            添加
-                        </Button>
                     </div>
                 </PopoverContent>
             </Popover>

@@ -99,6 +99,8 @@ export interface DupSnapshotInfo {
     stale: boolean;
     /** 快照里记录了成员名单的群号 */
     groupIds: string[];
+    /** 快照里记录到的群名（群号 → 群名） */
+    groupNames: Record<string, string>;
 }
 
 /** POST /duplicates/export */
