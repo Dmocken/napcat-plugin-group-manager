@@ -19,6 +19,7 @@ import type {
 
 import { buildConfigSchema } from './config';
 import { dispatchNotice, dispatchRequest } from './core/events';
+import { rememberGroupMessage } from './core/message-cache';
 import { dispatchMessage } from './core/router';
 import { getGlobal, init, log, logError, updateGlobal } from './core/state';
 import { clearAllTimers, timerCount } from './core/timers';
@@ -52,6 +53,8 @@ export const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPlugin
 
 export const plugin_onmessage: PluginModule['plugin_onmessage'] = async (_ctx, event) => {
     try {
+        // 先把群消息内容留一份缓存：撤回通知里只有 message_id，等事件到了再查就晚了
+        rememberGroupMessage(event as unknown as RawEventLike);
         await dispatchMessage(event as unknown as RawEventLike);
     } catch (e) {
         logError('[群管助手] 消息处理异常:', e);

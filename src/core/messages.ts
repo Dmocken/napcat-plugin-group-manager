@@ -172,6 +172,35 @@ export function segmentsOf(event: RawEventLike): Seg[] {
     return Array.isArray(event.message) ? event.message : [];
 }
 
+/**
+ * 消息段 → 可读文本：图片 / 表情 / 引用等用占位符表示，便于事后查看。
+ * 取不到时返回空串（撤回记录等处再决定用什么兜底文案）。
+ */
+export function describeSegments(segments: Seg[] | MessageSegmentLike[] | string | undefined): string {
+    if (!segments) return '';
+    if (typeof segments === 'string') return segments.trim();
+
+    return segments
+        .map((s) => {
+            switch (s.type) {
+                case 'text':
+                    return String(s.data?.text ?? '');
+                case 'image':
+                    return '[图片]';
+                case 'face':
+                    return '[表情]';
+                case 'at':
+                    return `@${s.data?.qq ?? ''}`;
+                case 'reply':
+                    return '[回复]';
+                default:
+                    return `[${s.type}]`;
+            }
+        })
+        .join('')
+        .trim();
+}
+
 /** 消息中的纯文本（拼接所有 text 段；无 message 数组时退回 raw_message） */
 export function plainTextOf(event: RawEventLike): string {
     const segs = segmentsOf(event);

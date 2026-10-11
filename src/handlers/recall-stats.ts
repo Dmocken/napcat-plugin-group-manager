@@ -9,7 +9,8 @@
 import type { MessageSegmentLike, RawEventLike } from '../types';
 import { registerNotice } from '../core/events';
 import { loadRecallRecords, saveRecallRecords, type RecallData, type RecallUserData } from '../core/group-data';
-import { at, callAction, MESSAGES, sendForward, sendGroup, sendPrivate, text } from '../core/messages';
+import { cachedMessageText } from '../core/message-cache';
+import { at, callAction, describeSegments, MESSAGES, sendForward, sendGroup, sendPrivate, text } from '../core/messages';
 import { canToggle, isGlobalAdmin } from '../core/permission';
 import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
@@ -24,40 +25,37 @@ function getUserRecords(data: RecallData, groupId: number | string, userId: numb
     return data[String(groupId)]?.[String(userId)];
 }
 
-/** 把消息段转成可读文本，便于事后查看 */
-function describeSegments(segments: MessageSegmentLike[] | string | undefined): string {
-    if (!segments) return '[消息内容已不可获取]';
-    if (typeof segments === 'string') return segments;
+/** 消息内容取不到的兜底文案 */
+const NO_CONTENT = '[消息内容已不可获取]';
 
-    return segments
-        .map((s) => {
-            switch (s.type) {
-                case 'text':
-                    return String(s.data?.text ?? '');
-                case 'image':
-                    return '[图片]';
-                case 'face':
-                    return '[表情]';
-                case 'at':
-                    return `@${s.data?.qq ?? ''}`;
-                case 'reply':
-                    return '[回复]';
-                default:
-                    return `[${s.type}]`;
-            }
-        })
-        .join('');
-}
-
+/** 兜底：按 message_id 反查（多数情况下消息已经删掉，查不到内容） */
 async function fetchMessageText(messageId: string | number): Promise<string> {
     try {
         const msg = await callAction<{ message?: MessageSegmentLike[] | string }>('get_msg', {
             message_id: String(messageId),
         });
-        return describeSegments(msg?.message);
+        return describeSegments(msg?.message) || NO_CONTENT;
     } catch {
-        return '[消息内容已不可获取]';
+        return NO_CONTENT;
     }
+}
+
+/**
+ * 取这条被撤回消息的内容。
+ *
+ * 撤回通知里只有 message_id，没有正文，所以按可靠性依次尝试：
+ *   1. 收到该消息时留下的缓存（plugin_onmessage 里存的，最可靠）；
+ *   2. 通知本身带的 message（部分协议端会给）；
+ *   3. get_msg 反查（消息通常已经被删，基本取不到）。
+ */
+async function resolveMessageText(event: RawEventLike): Promise<string> {
+    const cached = cachedMessageText(event.message_id);
+    if (cached) return cached;
+
+    const fromEvent = describeSegments(event.message);
+    if (fromEvent) return fromEvent;
+
+    return fetchMessageText(event.message_id ?? '');
 }
 
 async function fetchMemberName(groupId: number, userId: number): Promise<string> {
@@ -84,9 +82,7 @@ registerNotice('group_recall', 'recall_stats', async (ctx) => {
     if (!groupId || !targetId || !operatorId || operatorId === targetId) return;
 
     const event = ctx.event as RawEventLike;
-    const messageText = event.message
-        ? describeSegments(event.message)
-        : await fetchMessageText(event.message_id ?? '');
+    const messageText = await resolveMessageText(event);
 
     const [operatorName, targetName] = await Promise.all([
         fetchMemberName(groupId, operatorId),
