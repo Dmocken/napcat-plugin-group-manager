@@ -294,7 +294,8 @@ export function BroadcastPage(): React.JSX.Element {
                     </RowField>
 
                     <RowField label="发送效果">
-                        <p className="rounded-control border border-line bg-surface-2 px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap text-ink-2">
+                        {/* break-all：长链接 / 连续数字这类没有断点的内容也要换行，别撑成一行 */}
+                        <p className="rounded-control border border-line bg-surface-2 px-3 py-2 text-[13px] leading-relaxed break-all whitespace-pre-wrap text-ink-2">
                             {preview}
                         </p>
                     </RowField>
@@ -411,7 +412,7 @@ export function BroadcastPage(): React.JSX.Element {
                 <div className="max-h-[320px] space-y-3 overflow-y-auto">
                     <div className="rounded-panel border border-line bg-surface-2 p-3">
                         <div className="text-[11px] text-subtle">消息内容</div>
-                        <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-wrap text-ink-2">
+                        <p className="mt-1.5 text-[13px] leading-relaxed break-all whitespace-pre-wrap text-ink-2">
                             {preview}
                         </p>
                     </div>
