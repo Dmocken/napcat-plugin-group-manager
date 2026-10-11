@@ -87,6 +87,30 @@ export function readLogLines(name: string, limit: number): unknown[] {
     }
 }
 
+/** 读取整个日志文件（导出下载用）；不存在或读失败返回空串 */
+export function readLogFile(name: string): string {
+    const file = dataFile(name);
+    try {
+        return fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * 删除日志文件（下次写入会自动重建）。
+ * 权限不足 / 被占用时抛出错误，由调用方回给界面，不静默失败。
+ */
+export function clearLogFile(name: string): void {
+    const file = dataFile(name);
+    if (!fs.existsSync(file)) return;
+    try {
+        fs.rmSync(file, { force: true });
+    } catch (e) {
+        throw new Error(`删除 ${name} 失败：${e instanceof Error ? e.message : String(e)}`);
+    }
+}
+
 const ERROR_LOG = 'errors.log';
 
 /** 追加一条错误记录 */

@@ -1,4 +1,4 @@
-import { Activity, CircleCheck, RefreshCw } from 'lucide-react';
+import { Activity, CircleCheck, Download, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -112,6 +112,8 @@ export function ActivityLogPanel(): React.JSX.Element {
     const bootAt = useStore((s) => s.activitiesBootAt);
     const groups = useStore((s) => s.groups);
     const refreshActivities = useStore((s) => s.refreshActivities);
+    const downloadLog = useStore((s) => s.downloadLog);
+    const clearLog = useStore((s) => s.clearLog);
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
 
@@ -200,7 +202,26 @@ export function ActivityLogPanel(): React.JSX.Element {
                         )}
                     </div>
 
-                    <div className="flex items-center justify-end border-t border-line px-5 py-3">
+                    <div className="flex items-center gap-2 border-t border-line px-5 py-3">
+                        <Button
+                            size="sm"
+                            disabled={!activities.length}
+                            onClick={() => void downloadLog('activity')}
+                        >
+                            <Download className="size-3.5" />
+                            下载日志
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!activities.length}
+                            title="清空 data/activity.log"
+                            onClick={() => void clearLog('activity')}
+                        >
+                            <Trash2 className="size-3.5" />
+                            清空
+                        </Button>
+                        <span className="flex-1" />
                         <Button onClick={() => setOpen(false)}>关闭</Button>
                     </div>
                 </DialogContent>

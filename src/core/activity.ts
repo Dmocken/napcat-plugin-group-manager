@@ -12,7 +12,7 @@
 
 import type { FeatureKey } from '../types';
 import { startedAt, stamp } from './state';
-import { appendLogLine, readLogLines } from './store';
+import { appendLogLine, clearLogFile, readLogLines } from './store';
 
 export type ActivityResult = 'ok' | 'fail' | 'reject';
 export type ActivitySource = 'command' | 'event' | 'api';
@@ -187,4 +187,13 @@ export function recentActivities(limit = ACTIVITY_KEEP): ActivityRecord[] {
     const fromFile = readLogLines(ACTIVITY_LOG, limit) as ActivityRecord[];
     if (fromFile.length) return fromFile;
     return buffer.slice(0, limit);
+}
+
+/**
+ * 清空调用日志：内存缓冲与 activity.log 一起清。
+ * 只删文件是不够的 —— 文件为空时 recentActivities 会回退到内存里那批记录。
+ */
+export function clearActivityLog(): void {
+    buffer.length = 0;
+    clearLogFile(ACTIVITY_LOG);
 }

@@ -9,9 +9,10 @@ import {
     defaultFeatureSettings,
 } from '../constants';
 import type { FeatureSettings, GlobalConfig, GroupProfile, PluginStore } from '../types';
-import { appendErrorLine, readJson, readErrorLines, setDataDir, writeJson } from './store';
+import { appendErrorLine, clearLogFile, readJson, readErrorLines, setDataDir, writeJson } from './store';
 
 const CONFIG_FILE = 'config.json';
+const ERROR_LOG_FILE = 'errors.log';
 
 let ncCtx: NapCatPluginContext | null = null;
 
@@ -295,6 +296,16 @@ export function recentErrors(limit = ERROR_KEEP): ErrorRecord[] {
     const fromFile = readErrorLines(limit) as ErrorRecord[];
     if (fromFile.length) return fromFile;
     return errorBuffer.slice(0, limit);
+}
+
+/**
+ * 清空错误记录：内存缓冲、errors.log 与本次运行的异常计数一起归零。
+ * （只删文件不够：文件为空时 recentErrors 会回退到内存缓冲）
+ */
+export function clearErrorLog(): void {
+    errorBuffer.length = 0;
+    stats.errors = 0;
+    clearLogFile(ERROR_LOG_FILE);
 }
 
 /**

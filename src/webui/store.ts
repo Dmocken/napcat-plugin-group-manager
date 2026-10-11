@@ -23,6 +23,15 @@ import type {
 /** 左侧导航的页面 */
 export type PageKey = 'overview' | 'global' | 'profiles';
 
+/** 可导出 / 清空的日志文件 */
+export type LogTarget = 'errors' | 'activity';
+
+/** 日志文件名（界面提示与下载文件名共用） */
+const LOG_FILE_NAME: Record<LogTarget, string> = {
+    errors: 'errors.log',
+    activity: 'activity.log',
+};
+
 interface ConfirmState {
     title: string;
     text: string;
@@ -71,6 +80,10 @@ interface StoreState {
     refreshStatus: () => Promise<void>;
     refreshErrors: () => Promise<void>;
     refreshActivities: () => Promise<void>;
+    /** 下载原始日志文件（errors.log / activity.log） */
+    downloadLog: (target: LogTarget) => Promise<void>;
+    /** 二次确认后清空日志；清 errors 时本次运行的异常计数一并归零 */
+    clearLog: (target: LogTarget) => Promise<void>;
     save: () => Promise<void>;
     handleError: (error: unknown, prefix?: string) => void;
     clearError: () => void;
@@ -255,6 +268,43 @@ export const useStore = create<StoreState>()(
                 });
             } catch {
                 /* 调用日志读取失败不影响主流程 */
+            }
+        },
+
+        downloadLog: async (target) => {
+            const file = LOG_FILE_NAME[target];
+            try {
+                await downloadFile(`/logs/file?name=${target}`, file);
+                get().toast(`已下载 ${file}`);
+            } catch (error) {
+                get().handleError(error, '下载失败：');
+            }
+        },
+
+        clearLog: async (target) => {
+            const isErrors = target === 'errors';
+            const file = LOG_FILE_NAME[target];
+            const ok = await get().askConfirm(
+                isErrors ? '清空异常记录' : '清空调用日志',
+                `确定清空 data/${file}？\n` +
+                    (isErrors
+                        ? '本次运行的「异常次数」会一并归零，清空后无法恢复。'
+                        : '清空后无法恢复，建议先「下载日志」留档。'),
+                'danger',
+            );
+            if (!ok) return;
+
+            try {
+                await request('/logs/clear', { method: 'POST', body: { target } });
+                if (isErrors) {
+                    // 异常计数已归零，连 /status 一起刷新，概览与侧栏同步
+                    await Promise.all([get().refreshErrors(), get().refreshStatus()]);
+                } else {
+                    await get().refreshActivities();
+                }
+                get().toast(isErrors ? '异常记录已清空' : '调用日志已清空');
+            } catch (error) {
+                get().handleError(error, '清空失败：');
             }
         },
 

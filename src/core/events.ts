@@ -8,6 +8,7 @@
 
 import type { FeatureKey, RawEventLike } from '../types';
 import { beginActivity } from './activity';
+import { resolveNickname } from './nicknames';
 import { getFeatureSettings } from './profiles';
 import { isPluginEnabled } from './permission';
 import { logError, stats, logDebug } from './state';
@@ -50,24 +51,62 @@ export function registerRequest(
     requestHandlers.push({ kind: requestType, feature, handler });
 }
 
+/**
+ * 取号码字段：不同 NapCat 版本 / 事件类型的字段名可能是下划线或驼峰
+ * （例如加群请求只给 groupId / userId），因此逐个候选尝试。
+ */
+function numberOf(event: RawEventLike, keys: string[]): number {
+    const raw = event as unknown as Record<string, unknown>;
+    for (const key of keys) {
+        const value = raw[key];
+        if (value === undefined || value === null || String(value).trim() === '') continue;
+        const num = Number(value);
+        if (Number.isFinite(num) && num !== 0) return num;
+    }
+    return 0;
+}
+
 function buildContext(event: RawEventLike): EventContext {
     return {
         event,
-        groupId: Number(event.group_id ?? 0),
-        userId: Number(event.user_id ?? 0),
-        operatorId: Number(event.operator_id ?? 0),
+        groupId: numberOf(event, ['group_id', 'groupId', 'groupCode']),
+        userId: numberOf(event, ['user_id', 'userId']),
+        operatorId: numberOf(event, ['operator_id', 'operatorId']),
     };
+}
+
+/** 取字符串字段（同样兼容驼峰命名） */
+function textOf(event: RawEventLike, keys: string[]): string {
+    const raw = event as unknown as Record<string, unknown>;
+    for (const key of keys) {
+        const value = raw[key];
+        if (value === undefined || value === null || String(value).trim() === '') continue;
+        return String(value).trim();
+    }
+    return '';
 }
 
 /** 事件摘要：给「最近调用」面板说明是什么触发了这次处理 */
 function eventSummary(event: RawEventLike): string {
     const parts: string[] = [];
-    if (event.sub_type) parts.push(String(event.sub_type));
-    if (event.operator_id) parts.push(`操作者 ${event.operator_id}`);
-    if (event.user_id) parts.push(`目标 ${event.user_id}`);
-    if (event.duration) parts.push(`时长 ${event.duration}s`);
-    if (event.comment) parts.push(`留言 ${event.comment}`);
-    if (event.flag) parts.push(`flag ${event.flag}`);
+    const subType = textOf(event, ['sub_type', 'subType']);
+    if (subType) parts.push(subType);
+
+    const operatorId = numberOf(event, ['operator_id', 'operatorId']);
+    if (operatorId) parts.push(`操作者 ${operatorId}`);
+
+    const userId = numberOf(event, ['user_id', 'userId']);
+    if (userId) parts.push(`目标 ${userId}`);
+
+    const duration = numberOf(event, ['duration']);
+    if (duration) parts.push(`时长 ${duration}s`);
+
+    const comment = textOf(event, ['comment', 'postscript', 'message']);
+    if (comment) parts.push(`留言 ${comment}`);
+
+    const flag = textOf(event, ['flag']);
+    if (flag) parts.push(`flag ${flag}`);
+
     return parts.join(' · ');
 }
 
@@ -89,12 +128,17 @@ async function run(
         handled = true;
         stats.eventHandled += 1;
 
+        // 事件通知不带昵称，按需反查（有缓存与超时保护）
+        const actorId = context.operatorId || context.userId;
+        const userName = await resolveNickname(context.groupId, actorId);
+
         const activity = beginActivity({
             source: 'event',
             action: `${label}:${kind}`,
             feature: h.feature ?? 'system',
             groupId: context.groupId,
-            userId: context.operatorId || context.userId,
+            userId: actorId,
+            userName,
             input: eventSummary(event),
         });
 
@@ -103,7 +147,14 @@ async function run(
             await h.handler(context);
             activity.finish('ok');
         } catch (e) {
-            logError(`[群管助手] 处理事件 ${label}/${kind} 失败:`, e);
+            // 上下文显式传入：不依赖全局 activeErrorContext，避免与并发的命令记录互相覆盖
+            logError(`[群管助手] 处理事件 ${label}/${kind} 失败:`, e, {
+                source: 'event',
+                feature: h.feature ?? 'system',
+                groupId: context.groupId,
+                userId: actorId,
+                userName,
+            });
             activity.finish('fail', e instanceof Error ? e.message : String(e));
         }
     }

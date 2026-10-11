@@ -1,4 +1,4 @@
-import { CircleCheck, Copy, RefreshCw, TriangleAlert } from 'lucide-react';
+import { CircleCheck, Copy, Download, RefreshCw, Trash2, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -56,9 +56,15 @@ function Row({
                 {record.time.slice(5)}
             </span>
 
-            <span className="flex w-[92px] shrink-0 items-center gap-1.5">
+            {/* 功能 + 触发它的命令（事件类 / 系统类记录没有命令名） */}
+            <span className="flex w-[148px] shrink-0 items-center gap-1.5">
                 <Icon className="size-3.5 shrink-0 text-subtle" />
                 <span className="truncate text-[12px] text-ink-2">{label}</span>
+                {record.command ? (
+                    <span className="max-w-[72px] shrink-0 truncate rounded border border-line px-1 font-mono-num text-[10px] text-subtle">
+                        {record.command}
+                    </span>
+                ) : null}
             </span>
 
             <IdentityCell
@@ -105,6 +111,8 @@ export function ErrorLogPanel(): React.JSX.Element {
     const bootAt = useStore((s) => s.errorsBootAt);
     const groups = useStore((s) => s.groups);
     const refreshErrors = useStore((s) => s.refreshErrors);
+    const downloadLog = useStore((s) => s.downloadLog);
+    const clearLog = useStore((s) => s.clearLog);
     const toast = useStore((s) => s.toast);
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -214,7 +222,26 @@ export function ErrorLogPanel(): React.JSX.Element {
                         )}
                     </div>
 
-                    <div className="flex items-center justify-end border-t border-line px-5 py-3">
+                    <div className="flex items-center gap-2 border-t border-line px-5 py-3">
+                        <Button
+                            size="sm"
+                            disabled={!errors.length}
+                            onClick={() => void downloadLog('errors')}
+                        >
+                            <Download className="size-3.5" />
+                            下载日志
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!errors.length}
+                            title="清空 data/errors.log，并把本次运行的异常次数归零"
+                            onClick={() => void clearLog('errors')}
+                        >
+                            <Trash2 className="size-3.5" />
+                            清空
+                        </Button>
+                        <span className="flex-1" />
                         <Button onClick={() => setOpen(false)}>关闭</Button>
                     </div>
                 </DialogContent>

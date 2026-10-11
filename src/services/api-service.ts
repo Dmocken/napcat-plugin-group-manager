@@ -22,9 +22,9 @@ import {
     readSnapshotFile,
     snapshotInfo,
 } from './dup-check';
-import { recentActivities } from '../core/activity';
-import { getGlobal, getProfiles, recentErrors, startedAt, stats, updateGlobal, uptimeSeconds, uptimeText } from '../core/state';
-import { getDataDir, listDataFiles } from '../core/store';
+import { clearActivityLog, recentActivities } from '../core/activity';
+import { clearErrorLog, getGlobal, getProfiles, recentErrors, startedAt, stats, updateGlobal, uptimeSeconds, uptimeText } from '../core/state';
+import { getDataDir, listDataFiles, readLogFile } from '../core/store';
 
 function fail(res: PluginHttpResponse, code: number, message: string): void {
     res.status(code).json({ code: -1, message });
@@ -249,6 +249,60 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
     get('/activity', (req, res) => {
         const limit = Math.min(Number(req.query?.limit) || 50, 200);
         res.json({ code: 0, data: { records: recentActivities(limit), startedAt } });
+    });
+
+    /* ---------------- 日志导出 / 清空 ---------------- */
+
+    const LOG_FILES: Record<string, string> = {
+        errors: 'errors.log',
+        activity: 'activity.log',
+    };
+
+    /** 下载原始日志文件（text/plain，前端用 downloadFile 存盘） */
+    get('/logs/file', (req, res) => {
+        const name = String(req.query?.name ?? '');
+        const file = LOG_FILES[name];
+        if (!file) {
+            fail(res, 400, `未知日志：${name || '(空)'}`);
+            return;
+        }
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+        res.send(readLogFile(file));
+    });
+
+    /** 清空 errors.log / activity.log（含内存缓冲；清 errors 时异常计数一并归零） */
+    post('/logs/clear', (req, res) => {
+        const body = req.body as { target?: string } | undefined;
+        const target = String(body?.target ?? '');
+        const targets = target === 'both' ? ['errors', 'activity'] : [target];
+
+        if (!targets.every((item) => LOG_FILES[item])) {
+            fail(res, 400, `未知日志：${target || '(空)'}`);
+            return;
+        }
+
+        const cleared: string[] = [];
+        const failed: { name: string; error: string }[] = [];
+        for (const item of targets) {
+            try {
+                if (item === 'errors') clearErrorLog();
+                else clearActivityLog();
+                cleared.push(LOG_FILES[item]);
+            } catch (e) {
+                failed.push({
+                    name: LOG_FILES[item],
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }
+
+        // 一个都没清成功 → 直接报错，别让界面以为清掉了
+        if (!cleared.length) {
+            fail(res, 500, failed.map((item) => item.error).join('；'));
+            return;
+        }
+        res.json({ code: 0, data: { cleared, failed } });
     });
 
     /* ---------------- 重复加群检测 ---------------- */
