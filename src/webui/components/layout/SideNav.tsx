@@ -1,7 +1,7 @@
 import { Layers, LayoutDashboard, Shield, SlidersHorizontal } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn, formatUptime, useLiveUptime } from '@/lib/utils';
 import { useStore, type PageKey } from '@/store';
 
 const NAV: { key: PageKey; label: string; icon: typeof LayoutDashboard }[] = [
@@ -33,9 +33,18 @@ export function SideNav(): React.JSX.Element {
     const status = useStore((s) => s.status);
     const global = useStore((s) => s.global);
     const profiles = useStore((s) => s.profiles);
+    const dirty = useStore((s) => s.dirty);
+    const liveUptime = useLiveUptime(status?.uptimeSeconds);
 
-    const enabled = global.enabled !== false;
-    const bound = profiles.reduce((sum, item) => sum + item.group_ids.length, 0);
+    // 没有未保存的修改时，直接用后端返回的实时汇总，避免别处的改动在这里看不到
+    const summary = status?.summary;
+    const useLive = !dirty && Boolean(summary);
+    const enabled = (useLive ? status?.global.enabled : global.enabled) !== false;
+    const bound = useLive
+        ? (summary?.groups ?? 0)
+        : profiles.reduce((sum, item) => sum + item.group_ids.length, 0);
+    const profileCount = useLive ? (summary?.profiles ?? 0) : profiles.length;
+    const uptime = liveUptime === undefined ? (status?.uptime ?? '—') : formatUptime(liveUptime);
 
     return (
         <aside className="flex w-[232px] shrink-0 flex-col border-r border-line bg-surface">
@@ -45,10 +54,16 @@ export function SideNav(): React.JSX.Element {
                 </span>
                 <div className="min-w-0">
                     <div className="truncate text-[13px] leading-4 font-semibold text-ink">
-                        {status?.pluginName ?? '群管助手'}
+                        群管插件
                     </div>
-                    <div className="truncate text-[11px] leading-4 text-subtle">
+                    <div
+                        className="truncate text-[11px] leading-4 text-subtle"
+                        title={`构建于 ${__BUILD_TIME__}`}
+                    >
                         {status ? `v${status.version}` : '加载中…'}
+                        <span className="ml-1.5 font-mono-num text-[10px] opacity-70">
+                            {__BUILD_COMMIT__}
+                        </span>
                     </div>
                 </div>
             </div>
@@ -100,12 +115,12 @@ export function SideNav(): React.JSX.Element {
                     <div className="flex items-center justify-between">
                         <dt>群 / 配置</dt>
                         <dd className="font-mono-num text-muted">
-                            {bound} / {profiles.length}
+                            {bound} / {profileCount}
                         </dd>
                     </div>
                     <div className="flex items-center justify-between">
                         <dt>已运行</dt>
-                        <dd className="font-mono-num text-muted">{status?.uptime ?? '—'}</dd>
+                        <dd className="font-mono-num text-muted">{uptime}</dd>
                     </div>
                     <div className="flex items-center justify-between">
                         <dt>当前时间</dt>

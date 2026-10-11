@@ -7,6 +7,7 @@
  */
 
 import type { FeatureKey, RawEventLike } from '../types';
+import { beginActivity } from './activity';
 import { getFeatureSettings } from './profiles';
 import { isPluginEnabled } from './permission';
 import { logError, stats, logDebug } from './state';
@@ -58,6 +59,18 @@ function buildContext(event: RawEventLike): EventContext {
     };
 }
 
+/** 事件摘要：给「最近调用」面板说明是什么触发了这次处理 */
+function eventSummary(event: RawEventLike): string {
+    const parts: string[] = [];
+    if (event.sub_type) parts.push(String(event.sub_type));
+    if (event.operator_id) parts.push(`操作者 ${event.operator_id}`);
+    if (event.user_id) parts.push(`目标 ${event.user_id}`);
+    if (event.duration) parts.push(`时长 ${event.duration}s`);
+    if (event.comment) parts.push(`留言 ${event.comment}`);
+    if (event.flag) parts.push(`flag ${event.flag}`);
+    return parts.join(' · ');
+}
+
 async function run(
     handlers: Registered<string>[],
     kind: string,
@@ -75,11 +88,23 @@ async function run(
         if (h.feature && context.groupId && !getFeatureSettings(context.groupId, h.feature).enabled) continue;
         handled = true;
         stats.eventHandled += 1;
+
+        const activity = beginActivity({
+            source: 'event',
+            action: `${label}:${kind}`,
+            feature: h.feature ?? 'system',
+            groupId: context.groupId,
+            userId: context.operatorId || context.userId,
+            input: eventSummary(event),
+        });
+
         try {
             logDebug(`[群管助手] 事件 ${label}/${kind} | 群 ${context.groupId}`);
             await h.handler(context);
+            activity.finish('ok');
         } catch (e) {
             logError(`[群管助手] 处理事件 ${label}/${kind} 失败:`, e);
+            activity.finish('fail', e instanceof Error ? e.message : String(e));
         }
     }
 

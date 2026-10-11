@@ -1,6 +1,7 @@
 import { Check, Copy, Search, TriangleAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
+import { ActivityLogPanel } from '@/components/ActivityLogPanel';
 import { ErrorLogPanel } from '@/components/ErrorLogPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,7 @@ import { EmptyState, Panel, PanelHeader } from '@/components/ui/panel';
 import { SwitchField } from '@/components/ui/switch';
 import { featureIcon, featureShort } from '@/lib/constants';
 import type { GroupProfile } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, copyText, formatUptime, selectForManualCopy, useLiveUptime } from '@/lib/utils';
 import { useStore } from '@/store';
 
 /* ---------------- 指标卡 ---------------- */
@@ -274,6 +275,8 @@ export function OverviewPage(): React.JSX.Element {
     const global = useStore((s) => s.global);
     const lastSavedAt = useStore((s) => s.lastSavedAt);
     const toast = useStore((s) => s.toast);
+    const liveUptime = useLiveUptime(status?.uptimeSeconds);
+    const uptime = liveUptime === undefined ? (status?.uptime ?? '—') : formatUptime(liveUptime);
 
     // 记录管理员最近一次访问本页的时间（纯前端，localStorage）
     const [visit, setVisit] = useState<{ now: string; prev: string }>({ now: '', prev: '' });
@@ -316,12 +319,15 @@ export function OverviewPage(): React.JSX.Element {
     const copyPath = async (): Promise<void> => {
         const path = status?.dataPath;
         if (!path) return;
-        try {
-            await navigator.clipboard.writeText(path);
+        if (await copyText(path)) {
             toast('数据目录已复制');
-        } catch {
-            toast('复制失败，请手动选中路径', 'err');
+            return;
         }
+        if (selectForManualCopy(path)) {
+            toast('浏览器不允许自动复制，路径已选中，请按 Ctrl/⌘ + C', 'err');
+            return;
+        }
+        toast('复制失败，请手动选中路径', 'err');
     };
 
     return (
@@ -370,7 +376,7 @@ export function OverviewPage(): React.JSX.Element {
                         ))}
                         <div className="flex items-center justify-between border-t border-line pt-2">
                             <dt className="text-subtle">运行时长</dt>
-                            <dd className="text-ink-2">{status?.uptime ?? '—'}</dd>
+                            <dd className="text-ink-2">{uptime}</dd>
                         </div>
                     </dl>
                 </Panel>
@@ -444,6 +450,7 @@ export function OverviewPage(): React.JSX.Element {
                 </Panel>
             </div>
 
+            <ActivityLogPanel />
             <ErrorLogPanel />
         </div>
     );

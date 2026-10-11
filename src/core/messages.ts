@@ -3,6 +3,7 @@
  */
 
 import type { MessageSegmentLike, RawEventLike } from '../types';
+import { noteActivitySent } from './activity';
 import { assetsDirs, fileToBase64, resolveAsset } from './store';
 import { ctx, getGlobal, logDebug, logError, logWarn } from './state';
 import { globalText } from './texts';
@@ -35,9 +36,14 @@ export async function callAction<T = any>(action: string, params: Record<string,
         }
         return res as T;
     } catch (e) {
-        // 操作型接口没有 data，NapCat 会抛这个错误，但操作其实已经生效 → 按成功处理
+        // 操作型接口没有 data，NapCat 成功 / 失败抛的都是这个错误，无法据此判断成败，
+        // 只能按成功处理；需要确认结果的操作请改用通知回执（见 handlers/ban.ts）
         if (isNoDataReturned(e)) {
-            logDebug(`[群管助手] ${action} 无返回值（操作型接口，按成功处理）`);
+            logDebug(
+                `[群管助手] ${action} 无返回值（操作型接口，按成功处理）: ${
+                    e instanceof Error ? e.message : String(e)
+                }`,
+            );
             return null as T;
         }
         throw e;
@@ -84,6 +90,7 @@ function brief(message: string | Seg[]): string {
 export async function sendGroup(groupId: number | string, message: string | Seg[]): Promise<void> {
     try {
         await callAction('send_group_msg', { group_id: String(groupId), message: toMessage(message) });
+        noteActivitySent(brief(message));
     } catch (e) {
         logError(`[群管助手] 发送群消息失败 group=${groupId} 内容="${brief(message)}":`, e);
     }
@@ -92,6 +99,7 @@ export async function sendGroup(groupId: number | string, message: string | Seg[
 export async function sendPrivate(userId: number | string, message: string | Seg[]): Promise<void> {
     try {
         await callAction('send_private_msg', { user_id: String(userId), message: toMessage(message) });
+        noteActivitySent(brief(message));
     } catch (e) {
         logError(`[群管助手] 发送私聊消息失败 user=${userId} 内容="${brief(message)}":`, e);
     }
@@ -147,6 +155,7 @@ export async function sendForward(opts: {
                 await callAction('send_private_forward_msg', { user_id: String(opts.userId), messages: batch });
             }
         }
+        noteActivitySent(`📋 ${opts.title}（转发 ${opts.lines.length} 行）`);
         return true;
     } catch (e) {
         logDebug('[群管助手] 合并转发失败，降级为普通消息:', e);

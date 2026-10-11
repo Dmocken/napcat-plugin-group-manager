@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react';
 import { GroupSelect } from '@/components/GroupSelect';
 import { FeatureRow } from '@/components/profile/FeatureRow';
 import { TextRow } from '@/components/profile/TextRow';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Panel, SectionTitle } from '@/components/ui/panel';
@@ -15,14 +14,8 @@ import { useStore } from '@/store';
 
 type TabKey = 'features' | 'groups' | 'texts';
 
-/** 单条群配置的详情：头部信息 + 功能 / 绑定群 / 提示文案三个页签 */
-export function ProfileDetail({
-    profile,
-    index,
-}: {
-    profile: GroupProfile;
-    index: number;
-}): React.JSX.Element {
+/** 单条群配置的详情：配置名称 + 功能 / 绑定群 / 提示文案三个页签 */
+export function ProfileDetail({ profile }: { profile: GroupProfile }): React.JSX.Element {
     const meta = useStore((s) => s.meta);
     const collapsed = useStore((s) => s.collapsed);
     const setProfileLabel = useStore((s) => s.setProfileLabel);
@@ -50,7 +43,6 @@ export function ProfileDetail({
         (feature) => !(collapsed[`${collapsePrefix}${profile.id}|${feature.key}`] ?? true),
     );
     const impact = profileImpact(profile);
-    const enabledCount = Object.values(profile.features).filter((f) => f.enabled).length;
     const textCount = meta.features.reduce((sum, f) => sum + textParamsOf(f).length, 0);
 
     const handleDelete = async (): Promise<void> => {
@@ -87,11 +79,6 @@ export function ProfileDetail({
                     placeholder="配置名称"
                     onChange={(event) => setProfileLabel(profile.id, event.target.value)}
                 />
-                <Badge variant="strong">#{index + 1}</Badge>
-                <Badge>{profile.group_ids.length} 个群</Badge>
-                <Badge variant={enabledCount ? 'default' : 'dashed'}>
-                    启用 {enabledCount} / {meta.features.length}
-                </Badge>
                 <span className="flex-1" />
                 {tab === 'groups' ? null : (
                     <Button

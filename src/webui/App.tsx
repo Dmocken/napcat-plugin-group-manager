@@ -19,10 +19,44 @@ export function App(): React.JSX.Element {
     const meta = useStore((s) => s.meta);
     const dirty = useStore((s) => s.dirty);
     const saving = useStore((s) => s.saving);
+    const refreshStatus = useStore((s) => s.refreshStatus);
+    const refreshActivities = useStore((s) => s.refreshActivities);
 
     useEffect(() => {
         void load();
     }, [load]);
+
+    // 运行数据实时同步：定时拉取 /status 与功能调用日志，
+    // 标签页切到后台时暂停、回到前台立即补一次
+    useEffect(() => {
+        const INTERVAL = 5000;
+        let timer = 0;
+        const pull = (): void => {
+            void refreshStatus();
+            void refreshActivities();
+        };
+        const start = (): void => {
+            window.clearInterval(timer);
+            timer = window.setInterval(pull, INTERVAL);
+        };
+
+        start();
+        const onVisibility = (): void => {
+            window.clearInterval(timer);
+            if (document.hidden) return;
+            pull();
+            start();
+        };
+        const onFocus = (): void => pull();
+
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('focus', onFocus);
+        return () => {
+            window.clearInterval(timer);
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('focus', onFocus);
+        };
+    }, [refreshStatus, refreshActivities]);
 
     // 关闭页面前提醒未保存
     useEffect(() => {

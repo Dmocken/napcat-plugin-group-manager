@@ -116,14 +116,46 @@
     }
 }
 
+/* 提示窗：
+   - 槽位（gm-toast-slot）只做高度动画，展开 / 折叠时其余提示窗会跟着平滑位移
+   - 卡片（gm-toast）自己做淡入淡出与轻微位移 */
+@keyframes gm-toast-slot-in {
+    from {
+        grid-template-rows: 0fr;
+    }
+    to {
+        grid-template-rows: 1fr;
+    }
+}
+
+@keyframes gm-toast-slot-out {
+    from {
+        grid-template-rows: 1fr;
+    }
+    to {
+        grid-template-rows: 0fr;
+    }
+}
+
 @keyframes gm-toast-in {
     from {
         opacity: 0;
-        transform: translateX(-50%) translateY(-12px);
+        transform: translateY(-8px) scale(0.98);
     }
     to {
         opacity: 1;
-        transform: translateX(-50%) translateY(0);
+        transform: none;
+    }
+}
+
+@keyframes gm-toast-out {
+    from {
+        opacity: 1;
+        transform: none;
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.98);
     }
 }
 
@@ -144,8 +176,32 @@
     animation: gm-pop-in 0.16s ease;
 }
 
+.gm-toast-slot {
+    display: grid;
+    grid-template-rows: 1fr;
+    animation: gm-toast-slot-in 0.2s ease-out;
+}
+
+.gm-toast-slot-leaving {
+    animation: gm-toast-slot-out 0.18s ease-in forwards;
+}
+
 .gm-toast {
-    animation: gm-toast-in 0.18s ease;
+    animation: gm-toast-in 0.2s ease-out;
+}
+
+.gm-toast-slot-leaving .gm-toast {
+    animation: gm-toast-out 0.18s ease-in forwards;
+}
+
+/* 尊重系统的「减少动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+    .gm-toast-slot,
+    .gm-toast-slot-leaving,
+    .gm-toast,
+    .gm-toast-slot-leaving .gm-toast {
+        animation: none;
+    }
 }
 
 .gm-rise {

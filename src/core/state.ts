@@ -44,14 +44,16 @@ export function uptimeSeconds(): number {
     return Math.floor((Date.now() - startedAt) / 1000);
 }
 
-export function uptimeText(): string {
-    const s = uptimeSeconds();
+export function uptimeText(seconds = uptimeSeconds()): string {
+    const s = Math.max(0, Math.floor(seconds));
     const d = Math.floor(s / 86400);
     const h = Math.floor((s % 86400) / 3600);
     const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
     if (d > 0) return `${d}天${h}小时`;
     if (h > 0) return `${h}小时${m}分钟`;
-    return `${m}分钟`;
+    if (m > 0) return `${m}分钟${sec}秒`;
+    return `${sec}秒`;
 }
 
 /* ---------------- 配置 ---------------- */
@@ -205,6 +207,8 @@ export interface ErrorContext {
     feature?: string;
     groupId?: string | number;
     userId?: string | number;
+    /** 触发者昵称（命令消息能拿到；事件通知通常没有） */
+    userName?: string;
 }
 
 export interface ErrorRecord {
@@ -217,6 +221,8 @@ export interface ErrorRecord {
     feature: string;
     groupId: string;
     userId: string;
+    /** 触发者昵称，仅供界面显示（旧记录没有该字段） */
+    userName?: string;
     /** 错误摘要（单行，长文本截断） */
     message: string;
 }
@@ -247,7 +253,8 @@ function textOf(value: unknown): string {
     }
 }
 
-function stamp(offsetMinutes = 0): string {
+/** 本地时间 YYYY-MM-DD HH:mm:ss（错误日志与调用日志共用） */
+export function stamp(offsetMinutes = 0): string {
     const d = new Date(Date.now() - offsetMinutes * 60_000);
     const p = (n: number): string => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(
@@ -274,6 +281,7 @@ export function recordError(args: unknown[], context?: ErrorContext): void {
         feature: ctxInfo.feature ?? '',
         groupId: ctxInfo.groupId === undefined ? '' : String(ctxInfo.groupId),
         userId: ctxInfo.userId === undefined ? '' : String(ctxInfo.userId),
+        userName: String(ctxInfo.userName ?? ''),
         message: text.length > 500 ? `${text.slice(0, 500)}…` : text,
     };
 

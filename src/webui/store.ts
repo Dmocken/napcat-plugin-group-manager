@@ -6,6 +6,7 @@ import { TEXT_FIELDS } from '@/lib/constants';
 import { featureOrder, newProfile, normalizeProfile } from '@/lib/profile';
 import { isQq } from '@/lib/utils';
 import type {
+    ActivityRecord,
     DupExportResult,
     DupSnapshotInfo,
     ErrorRecord,
@@ -47,6 +48,10 @@ interface StoreState {
     errors: ErrorRecord[];
     /** 后端本次启动的时间戳，用于区分本次 / 历史记录 */
     errorsBootAt: number | null;
+    /** 最近的功能调用记录（后端保留 50 条并写入 activity.log） */
+    activities: ActivityRecord[];
+    /** 调用日志对应的后端启动时间戳 */
+    activitiesBootAt: number | null;
     /** 群成员快照信息（重复加群检测用） */
     dupSnapshot: DupSnapshotInfo | null;
 
@@ -65,6 +70,7 @@ interface StoreState {
     load: () => Promise<void>;
     refreshStatus: () => Promise<void>;
     refreshErrors: () => Promise<void>;
+    refreshActivities: () => Promise<void>;
     save: () => Promise<void>;
     handleError: (error: unknown, prefix?: string) => void;
     clearError: () => void;
@@ -116,6 +122,11 @@ interface StoreState {
 
 let toastSeq = 0;
 
+/** 提示窗停留时长（毫秒） */
+const TOAST_LIFE = 2600;
+/** 退场动画时长，与 styles.css 里的 gm-toast-out 保持一致 */
+const TOAST_EXIT = 200;
+
 const nowText = (): string =>
     new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
@@ -133,6 +144,8 @@ export const useStore = create<StoreState>()(
         errorBanner: null,
         errors: [],
         errorsBootAt: null,
+        activities: [],
+        activitiesBootAt: null,
         dupSnapshot: null,
 
         page: 'overview',
@@ -169,6 +182,7 @@ export const useStore = create<StoreState>()(
                     request<GroupInfo[]>('/groups').catch(() => [] as GroupInfo[]),
                 ]);
                 void get().refreshErrors();
+                void get().refreshActivities();
                 void get().refreshDupSnapshot();
 
                 set((draft) => {
@@ -226,6 +240,21 @@ export const useStore = create<StoreState>()(
                 });
             } catch {
                 /* 错误记录读取失败不影响主流程 */
+            }
+        },
+
+        refreshActivities: async () => {
+            try {
+                const data = await request<{ records: ActivityRecord[]; startedAt: number }>(
+                    '/activity',
+                );
+                set((draft) => {
+                    draft.activities = data?.records ?? [];
+                    draft.activitiesBootAt =
+                        typeof data?.startedAt === 'number' ? data.startedAt : null;
+                });
+            } catch {
+                /* 调用日志读取失败不影响主流程 */
             }
         },
 
@@ -570,13 +599,22 @@ export const useStore = create<StoreState>()(
             set((draft) => {
                 draft.toasts.push({ id, message, kind });
             });
-            window.setTimeout(() => get().dismissToast(id), 2600);
+            window.setTimeout(() => get().dismissToast(id), TOAST_LIFE);
         },
 
-        dismissToast: (id) =>
+        dismissToast: (id) => {
+            // 两段式退场：先标记让界面播动画，动画结束后再真正移除，
+            // 这样多个提示窗堆叠时其余项会平滑上移而不是瞬间跳位
             set((draft) => {
-                draft.toasts = draft.toasts.filter((t) => t.id !== id);
-            }),
+                const item = draft.toasts.find((t) => t.id === id);
+                if (item) item.leaving = true;
+            });
+            window.setTimeout(() => {
+                set((draft) => {
+                    draft.toasts = draft.toasts.filter((t) => t.id !== id);
+                });
+            }, TOAST_EXIT);
+        },
 
         askConfirm: (title, text, tone = 'default') =>
             new Promise<boolean>((resolve) => {

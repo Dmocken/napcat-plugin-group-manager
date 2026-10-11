@@ -125,6 +125,8 @@ export interface StatusInfo {
     pluginName: string;
     version: string;
     uptime: string;
+    /** 运行秒数，前端据此本地走秒（旧后端可能不返回） */
+    uptimeSeconds?: number;
     dataPath: string;
     stats: {
         messageReceived: number;
@@ -157,7 +159,34 @@ export interface ErrorRecord {
     feature: string;
     groupId: string;
     userId: string;
+    /** 触发者昵称；旧日志行没有该字段 */
+    userName?: string;
     message: string;
+}
+
+/** GET /activity：一条功能调用记录 */
+export interface ActivityRecord {
+    time: string;
+    /** 记录产生时的插件启动时间戳；旧日志行没有该字段 */
+    boot?: number;
+    /** 调用来源：命令 / 事件 / 接口 */
+    source: 'command' | 'event' | 'api' | string;
+    /** 命令名或事件类型，如 ban / notice:group_ban */
+    action: string;
+    /** 所属功能；system 表示系统级 */
+    feature: string;
+    groupId: string;
+    /** 触发者 QQ */
+    userId: string;
+    /** 触发者昵称；旧日志行没有该字段 */
+    userName?: string;
+    /** 触发内容：用户消息原文 / 事件摘要 */
+    input: string;
+    /** 机器人发出的内容，多条用 ⏎ 连接 */
+    sent: string;
+    result: 'ok' | 'fail' | 'reject' | string;
+    /** 结果说明（失败 / 拒绝原因） */
+    note: string;
 }
 
 export type ToastKind = 'ok' | 'err';
@@ -166,4 +195,6 @@ export interface ToastItem {
     id: number;
     message: string;
     kind: ToastKind;
+    /** 正在播放退场动画，动画播完后由 store 真正移除 */
+    leaving?: boolean;
 }

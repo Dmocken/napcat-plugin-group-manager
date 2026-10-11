@@ -1,4 +1,4 @@
-import { CircleCheck, RefreshCw, TriangleAlert } from 'lucide-react';
+import { CircleCheck, Copy, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -8,41 +8,93 @@ import {
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Hint } from '@/components/ui/hint';
+import { IdentityCell } from '@/components/ui/identity';
 import { Panel, PanelHeader } from '@/components/ui/panel';
 import { featureIcon, featureShort } from '@/lib/constants';
 import type { ErrorRecord } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, copyText, selectForManualCopy } from '@/lib/utils';
 import { useStore } from '@/store';
 
-/** 一行摘要：时间 + 来源 + 群/用户 + 错误信息 */
-function Row({ record, compact = false }: { record: ErrorRecord; compact?: boolean }): React.JSX.Element {
+/** 复制用的完整文本：把界面省略掉的部分补全 */
+function recordText(record: ErrorRecord, groupName: string): string {
+    const who = record.userName ? `${record.userName}(${record.userId})` : record.userId;
+    const group =
+        groupName && groupName !== record.groupId
+            ? `${groupName}(${record.groupId})`
+            : record.groupId;
+
+    return [
+        `时间：${record.time}`,
+        `来源：${record.source}${record.command ? ` / ${record.command}` : ''}`,
+        `功能：${record.feature || '—'}`,
+        `群：${group || '—'}`,
+        `用户：${who || '—'}`,
+        `报错：${record.message}`,
+    ].join('\n');
+}
+
+/** 一行摘要：时间 + 功能 + 群 / 用户 + 单行报错（悬浮看全文、右侧可复制整条） */
+function Row({
+    record,
+    nameOf,
+    onCopy,
+    portalHint = false,
+}: {
+    record: ErrorRecord;
+    nameOf: (groupId: string) => string;
+    onCopy: (record: ErrorRecord) => void;
+    /** 在弹窗的滚动区里必须开启，否则浮窗会被容器裁切 */
+    portalHint?: boolean;
+}): React.JSX.Element {
     const Icon = record.feature ? featureIcon(record.feature) : TriangleAlert;
     const label = record.feature ? featureShort(record.feature, record.feature) : record.source;
 
     return (
-        <div
-            className={cn(
-                'flex items-start gap-3 border-b border-line/70 px-5 py-2 last:border-b-0',
-                compact && 'py-2.5',
-            )}
-        >
-            <Icon className="mt-0.5 size-3.5 shrink-0 text-subtle" />
-            <span className="w-[132px] shrink-0 font-mono-num text-[11px] text-subtle">
+        <div className="flex items-center gap-3 border-b border-line/70 px-5 py-2.5 last:border-b-0">
+            <span className="w-[118px] shrink-0 font-mono-num text-[11px] text-subtle">
                 {record.time.slice(5)}
             </span>
-            <span className="w-[92px] shrink-0 truncate text-[12px] text-ink-2">{label}</span>
-            <span className="w-[112px] shrink-0 truncate font-mono-num text-[11px] text-subtle">
-                {record.groupId ? `群 ${record.groupId}` : record.source}
-                {record.userId ? ` · ${record.userId}` : ''}
+
+            <span className="flex w-[92px] shrink-0 items-center gap-1.5">
+                <Icon className="size-3.5 shrink-0 text-subtle" />
+                <span className="truncate text-[12px] text-ink-2">{label}</span>
             </span>
-            <span
-                className={cn(
-                    'min-w-0 flex-1 text-[12px] text-muted',
-                    compact ? 'line-clamp-1' : 'break-all',
-                )}
+
+            <IdentityCell
+                kind="group"
+                id={record.groupId}
+                name={record.groupId ? nameOf(record.groupId) : ''}
+                className="w-[168px] shrink-0"
+            />
+            <IdentityCell
+                kind="user"
+                id={record.userId}
+                name={record.userName}
+                className="w-[150px] shrink-0"
+            />
+
+            <Hint
+                className="flex min-w-0 flex-1"
+                width={420}
+                portal={portalHint}
+                content={<span className="break-all">{record.message}</span>}
             >
-                {record.message}
-            </span>
+                <span className="min-w-0 flex-1 cursor-default truncate text-[12px] text-muted">
+                    {record.message}
+                </span>
+            </Hint>
+
+            <Button
+                variant="ghost"
+                size="iconSm"
+                className="size-7 shrink-0"
+                title="复制整条日志"
+                aria-label="复制整条日志"
+                onClick={() => onCopy(record)}
+            >
+                <Copy className="size-3.5" />
+            </Button>
         </div>
     );
 }
@@ -51,9 +103,28 @@ function Row({ record, compact = false }: { record: ErrorRecord; compact?: boole
 export function ErrorLogPanel(): React.JSX.Element {
     const errors = useStore((s) => s.errors);
     const bootAt = useStore((s) => s.errorsBootAt);
+    const groups = useStore((s) => s.groups);
     const refreshErrors = useStore((s) => s.refreshErrors);
+    const toast = useStore((s) => s.toast);
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    const nameOf = (groupId: string): string =>
+        groups.find((g) => String(g.group_id) === groupId)?.group_name || groupId;
+
+    const copy = async (record: ErrorRecord): Promise<void> => {
+        const text = recordText(record, nameOf(record.groupId));
+        if (await copyText(text)) {
+            toast('已复制异常详情');
+            return;
+        }
+        // 浏览器不允许自动复制时，退化成「内容已选中，按 Ctrl/⌘ + C」
+        if (selectForManualCopy(text)) {
+            toast('浏览器不允许自动复制，内容已选中，请按 Ctrl/⌘ + C', 'err');
+            return;
+        }
+        toast('复制失败，请手动选中内容后复制', 'err');
+    };
 
     const recent = errors.slice(0, 5);
     /** 本次启动产生的条数：与顶部「异常次数」口径一致 */
@@ -93,7 +164,12 @@ export function ErrorLogPanel(): React.JSX.Element {
                 ) : (
                     <>
                         {recent.map((record, index) => (
-                            <Row key={`${record.time}-${index}`} record={record} />
+                            <Row
+                                key={`${record.time}-${index}`}
+                                record={record}
+                                nameOf={nameOf}
+                                onCopy={(item) => void copy(item)}
+                            />
                         ))}
                         {errors.length > 5 ? (
                             <div className="border-t border-line px-5 py-2 text-[11px] text-subtle">
@@ -105,7 +181,7 @@ export function ErrorLogPanel(): React.JSX.Element {
             </Panel>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="max-w-[860px]" hideClose>
+                <DialogContent className="max-w-[1120px]" hideClose>
                     <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
                         <div className="min-w-0 flex-1">
                             <DialogTitle>异常记录</DialogTitle>
@@ -127,7 +203,13 @@ export function ErrorLogPanel(): React.JSX.Element {
                             </p>
                         ) : (
                             errors.map((record, index) => (
-                                <Row key={`${record.time}-${index}`} record={record} />
+                                <Row
+                                    key={`${record.time}-${index}`}
+                                    record={record}
+                                    nameOf={nameOf}
+                                    onCopy={(item) => void copy(item)}
+                                    portalHint
+                                />
                             ))
                         )}
                     </div>

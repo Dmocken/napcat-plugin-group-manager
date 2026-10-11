@@ -70,7 +70,7 @@ export function ProfilesPage(): React.JSX.Element {
                 </div>
             </div>
             {active ? (
-                <ProfileDetail profile={active} index={activeIndex} />
+                <ProfileDetail profile={active} />
             ) : (
                 <EmptyState
                     className="flex-1"

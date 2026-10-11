@@ -7,6 +7,7 @@
  */
 
 import type { CommandContext, FeatureKey, RawEventLike } from '../types';
+import { beginActivity } from './activity';
 import {
     atTargetsOf,
     commandPrefix,
@@ -127,6 +128,20 @@ export async function dispatchMessage(event: RawEventLike): Promise<boolean> {
         const context = buildContext(event, def, tokens, argText, isGroup);
         matched = true;
 
+        // 触发者昵称：日志面板上显示成「昵称 + QQ号」，拿不到时前端只显示号码
+        const userName = context.event.sender?.nickname || context.event.sender?.card || '';
+
+        // 开启一条调用日志：期间机器人发出的内容会自动汇总到 sent
+        const activity = beginActivity({
+            source: 'command',
+            action: def.name,
+            feature: def.feature,
+            groupId: context.groupId,
+            userId: context.userId,
+            userName,
+            input: context.plainText,
+        });
+
         const kind = def.permission ?? 'use';
         if (kind !== 'none' && isGroup && context.groupId) {
             const ok = kind === 'toggle'
@@ -135,6 +150,7 @@ export async function dispatchMessage(event: RawEventLike): Promise<boolean> {
             if (!ok) {
                 await sendGroup(context.groupId, MESSAGES.noPermission);
                 logDebug(`[群管助手] 拒绝 ${context.userId} 在群 ${context.groupId} 使用 ${def.name}`);
+                activity.finish('reject', '发送者没有使用权限');
                 break;
             }
         }
@@ -149,10 +165,13 @@ export async function dispatchMessage(event: RawEventLike): Promise<boolean> {
                 feature: def.feature,
                 groupId: context.groupId,
                 userId: context.userId,
+                userName,
             });
             await def.handler(context);
+            activity.finish('ok');
         } catch (e) {
             logError(`[群管助手] 命令 ${def.name} 执行失败:`, e);
+            activity.finish('fail', e instanceof Error ? e.message : String(e));
         } finally {
             setActiveErrorContext(null);
         }

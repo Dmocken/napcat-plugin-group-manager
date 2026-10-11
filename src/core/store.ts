@@ -40,29 +40,32 @@ export function writeJson(name: string, data: unknown): void {
     fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-/* ---------------- 错误日志（errors.log，按行 JSON） ---------------- */
+/* ---------------- 按行 JSON 日志（errors.log / activity.log） ---------------- */
 
-const ERROR_LOG = 'errors.log';
-const ERROR_LOG_MAX_BYTES = 256 * 1024;
+const LOG_MAX_BYTES = 256 * 1024;
 
-/** 追加一条错误记录；文件过大时重写，只保留最近若干行 */
-export function appendErrorLine(line: string): void {
+/** 日志文件轮转：超过上限时只保留最近 100 行 */
+function rotateLog(file: string): void {
+    if (!fs.existsSync(file) || fs.statSync(file).size <= LOG_MAX_BYTES) return;
+    const kept = fs.readFileSync(file, 'utf-8').split('\n').slice(-100).join('\n');
+    fs.writeFileSync(file, `${kept}\n`, 'utf-8');
+}
+
+/** 追加一条日志行；失败静默，不影响主流程 */
+export function appendLogLine(name: string, line: string): void {
     if (!dataDir) return;
-    const file = dataFile(ERROR_LOG);
     try {
-        if (fs.existsSync(file) && fs.statSync(file).size > ERROR_LOG_MAX_BYTES) {
-            const kept = fs.readFileSync(file, 'utf-8').split('\n').slice(-100).join('\n');
-            fs.writeFileSync(file, `${kept}\n`, 'utf-8');
-        }
+        const file = dataFile(name);
+        rotateLog(file);
         fs.appendFileSync(file, `${line}\n`, 'utf-8');
     } catch {
         /* 日志写入失败不影响主流程 */
     }
 }
 
-/** 读取最近 limit 条错误记录（按时间倒序） */
-export function readErrorLines(limit: number): unknown[] {
-    const file = dataFile(ERROR_LOG);
+/** 读取最近 limit 条日志行（按时间倒序），解析失败的行会被丢弃 */
+export function readLogLines(name: string, limit: number): unknown[] {
+    const file = dataFile(name);
     if (!fs.existsSync(file)) return [];
     try {
         return fs
@@ -82,6 +85,18 @@ export function readErrorLines(limit: number): unknown[] {
     } catch {
         return [];
     }
+}
+
+const ERROR_LOG = 'errors.log';
+
+/** 追加一条错误记录 */
+export function appendErrorLine(line: string): void {
+    appendLogLine(ERROR_LOG, line);
+}
+
+/** 读取最近 limit 条错误记录（按时间倒序） */
+export function readErrorLines(limit: number): unknown[] {
+    return readLogLines(ERROR_LOG, limit);
 }
 
 export interface DataFileInfo {

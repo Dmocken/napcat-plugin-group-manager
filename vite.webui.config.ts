@@ -12,6 +12,7 @@
  * 内联成单文件后，三种入口都能正常工作，服务端无需改动。
  */
 
+import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,6 +22,41 @@ import { defineConfig, type Plugin } from 'vite';
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const webuiRoot = path.join(projectRoot, 'src/webui');
+
+/**
+ * 构建时把「这份页面是哪个代码版本」写进产物，显示在左上角版本号右侧。
+ *
+ * 页面是单文件 HTML，产物带不带版本号直接决定部署后能不能判断
+ * 「浏览器有没有加载到新代码」；机器上没有 git 时回退为 unknown。
+ */
+function buildMeta(): { commit: string; buildTime: string } {
+    const d = new Date();
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    const buildTime =
+        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+        `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+    const git = (args: string): string => {
+        try {
+            return execSync(`git ${args}`, {
+                cwd: projectRoot,
+                stdio: ['ignore', 'pipe', 'ignore'],
+            })
+                .toString()
+                .trim();
+        } catch {
+            return '';
+        }
+    };
+
+    const hash = git('rev-parse --short HEAD');
+    if (!hash) return { commit: 'unknown', buildTime };
+
+    // 工作区有未提交改动时加「+」，提示这不是一个干净的提交
+    return { commit: git('status --porcelain') ? `${hash}+` : hash, buildTime };
+}
+
+const meta = buildMeta();
 
 function escapeRegExp(text: string): string {
     return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -95,6 +131,11 @@ export default defineConfig({
     root: webuiRoot,
     base: './',
     plugins: [react(), tailwindcss(), inlineSingleFile()],
+    define: {
+        /** 左侧导航显示的代码版本，见 buildMeta() */
+        __BUILD_COMMIT__: JSON.stringify(meta.commit),
+        __BUILD_TIME__: JSON.stringify(meta.buildTime),
+    },
     resolve: {
         alias: {
             '@': webuiRoot,

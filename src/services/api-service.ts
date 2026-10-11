@@ -22,7 +22,8 @@ import {
     readSnapshotFile,
     snapshotInfo,
 } from './dup-check';
-import { getGlobal, getProfiles, recentErrors, startedAt, stats, updateGlobal, uptimeText } from '../core/state';
+import { recentActivities } from '../core/activity';
+import { getGlobal, getProfiles, recentErrors, startedAt, stats, updateGlobal, uptimeSeconds, uptimeText } from '../core/state';
 import { getDataDir, listDataFiles } from '../core/store';
 
 function fail(res: PluginHttpResponse, code: number, message: string): void {
@@ -95,6 +96,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
                 pluginName: ctx.pluginName,
                 version: '0.1.0',
                 uptime: uptimeText(),
+                uptimeSeconds: uptimeSeconds(),
                 dataPath: getDataDir(),
                 stats: { ...stats },
                 global: publicGlobal(),
@@ -242,6 +244,11 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
     get('/errors', (req, res) => {
         const limit = Math.min(Number(req.query?.limit) || 50, 200);
         res.json({ code: 0, data: { records: recentErrors(limit), startedAt } });
+    });
+
+    get('/activity', (req, res) => {
+        const limit = Math.min(Number(req.query?.limit) || 50, 200);
+        res.json({ code: 0, data: { records: recentActivities(limit), startedAt } });
     });
 
     /* ---------------- 重复加群检测 ---------------- */
