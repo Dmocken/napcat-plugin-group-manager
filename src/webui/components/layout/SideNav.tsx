@@ -1,4 +1,11 @@
-import { Database, Layers, LayoutDashboard, Shield, SlidersHorizontal } from 'lucide-react';
+import {
+    Database,
+    Layers,
+    LayoutDashboard,
+    Send,
+    Shield,
+    SlidersHorizontal,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { cn, formatUptime, useLiveUptime } from '@/lib/utils';
@@ -9,6 +16,7 @@ const NAV: { key: PageKey; label: string; icon: typeof LayoutDashboard }[] = [
     { key: 'global', label: '全局设置', icon: SlidersHorizontal },
     { key: 'profiles', label: '群配置', icon: Layers },
     { key: 'data', label: '群数据', icon: Database },
+    { key: 'broadcast', label: '发送消息', icon: Send },
 ];
 
 /** 系统时间：独立组件，避免整条侧栏每秒重渲染 */

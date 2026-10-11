@@ -129,6 +129,32 @@ export interface FriendInfo {
     remark: string;
 }
 
+/* ---------------- 群发消息（POST /send） ---------------- */
+
+/** 一次群发的请求参数 */
+export interface SendPayload {
+    /** 目标群号（不设上限，后端按间隔串行发送） */
+    groups: string[];
+    /** 正文（纯文本） */
+    text: string;
+    /** @全体成员 */
+    atAll?: boolean;
+    /** 群间随机间隔下限（秒） */
+    gapMin?: number;
+    /** 群间随机间隔上限（秒） */
+    gapMax?: number;
+}
+
+/** 一次群发的结果 */
+export interface SendResult {
+    /** 目标群总数 */
+    total: number;
+    /** 发送成功的群数 */
+    ok: number;
+    /** 发送失败的群与原因 */
+    failed: { groupId: string; error: string }[];
+}
+
 /* ---------------- 群数据（GET /data/*） ---------------- */
 
 /** 禁言记录：退群重进「重新禁言」保留的时长 */
@@ -143,6 +169,10 @@ export interface BanRecordRow {
     remaining: number;
     /** 是否已退群；undefined = 无法判断（老数据 / 没收到退群通知） */
     left?: boolean;
+    /** 禁言时反查到的昵称；没有时前端退回好友列表 / 只显示号码 */
+    userName?: string;
+    /** false = 这条禁言不参与「退群重进重新禁言」（sm / smplus） */
+    remute?: boolean;
 }
 
 /** 黑历史列表项（正文已拼成纯文本） */
@@ -168,6 +198,8 @@ export interface RecallEntryRow {
 export interface RecallRow {
     groupId: string;
     userId: string;
+    /** 被撤回人的昵称；没有时前端退回好友列表 / 只显示号码 */
+    userName?: string;
     count: number;
     /** 最近一次被撤回的时间戳（秒） */
     lastAt: number;

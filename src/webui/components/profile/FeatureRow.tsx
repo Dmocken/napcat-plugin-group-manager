@@ -1,6 +1,6 @@
 import { ChevronRight, GripVertical, Terminal } from 'lucide-react';
 
-import { ParamsSection } from '@/components/ParamField';
+import { ParamsSection, hasParamsSection } from '@/components/ParamField';
 import { ParamField } from '@/components/profile/ParamField';
 import { TagListEditor } from '@/components/TagListEditor';
 import { Badge } from '@/components/ui/badge';
@@ -181,16 +181,19 @@ export function FeatureRow({
                             </div>
                         </div>
 
-                        <div>
-                            <SectionTitle>参数</SectionTitle>
-                            <div className="mt-2.5">
-                                <ParamsSection
-                                    meta={meta}
-                                    settings={settings}
-                                    profileId={profile.id}
-                                />
+                        {/* 该功能只有「提示文案」参数时（如黑历史）不渲染这个空标题 */}
+                        {hasParamsSection(meta) ? (
+                            <div>
+                                <SectionTitle>参数</SectionTitle>
+                                <div className="mt-2.5">
+                                    <ParamsSection
+                                        meta={meta}
+                                        settings={settings}
+                                        profileId={profile.id}
+                                    />
+                                </div>
                             </div>
-                        </div>
+                        ) : null}
                     </div>
                 </CollapsibleContent>
             </div>

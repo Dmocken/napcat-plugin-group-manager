@@ -10,8 +10,17 @@
  * handler 与接口层共用，避免同一份文件出现两套解析逻辑。
  */
 
-import { cleanExpiredBanRecords, loadBanRecords, removeBanRecord, saveBanRecords } from './ban-records';
+import {
+    cleanExpiredBanRecords,
+    loadBanRecords,
+    removeBanRecord,
+    saveBanRecords,
+    type BanRecord,
+} from './ban-records';
 import { readJson, writeJson } from './store';
+
+/** QQ 群禁言时长上限：30 天（前端的选择器也按这个上限来） */
+export const MAX_BAN_SECONDS = 30 * 24 * 3600;
 
 /* ---------------- 黑历史 ---------------- */
 
@@ -64,6 +73,8 @@ export interface RecallEntry {
 export interface RecallUserData {
     count: number;
     records: RecallEntry[];
+    /** 被撤回人的昵称（记录时反查）；老数据没有，前端会退回好友列表 / 只显示号码 */
+    name?: string;
 }
 
 /** 群号 → QQ 号 → 该用户被撤回的数据 */
@@ -110,6 +121,8 @@ export function listBlackRecordRows(): BlackRecordRow[] {
 export interface RecallRow {
     groupId: string;
     userId: string;
+    /** 被撤回人的昵称；老数据为空 */
+    userName?: string;
     count: number;
     /** 最近一次被撤回的时间戳（秒） */
     lastAt: number;
@@ -134,9 +147,12 @@ export function listRecallRows(): RecallRow[] {
                 message: String(item.message ?? ''),
                 timestamp: Number(item.timestamp) || 0,
             }));
+            const userName =
+                typeof userData?.name === 'string' ? userData.name.trim() : '';
             rows.push({
                 groupId,
                 userId,
+                ...(userName ? { userName } : {}),
                 count: records.length,
                 lastAt: records.reduce((max, item) => Math.max(max, item.timestamp), 0),
                 records,
@@ -161,6 +177,10 @@ export interface BanRecordRow {
     remaining: number;
     /** 是否已退群；undefined = 无法判断（老数据 / 没收到退群通知） */
     left?: boolean;
+    /** 禁言时反查到的昵称；没有（老数据 / 反查失败）时为空 */
+    userName?: string;
+    /** false = 这条禁言不参与「退群重进重新禁言」（sm / smplus） */
+    remute?: boolean;
 }
 
 /** 扁平化禁言记录（顺带清理已过期项） */
@@ -178,6 +198,8 @@ export function listBanRecords(): BanRecordRow[] {
             const banTime = Number(record?.ban_time) || 0;
             const elapsed = Math.max(0, now - banTime);
             const left = typeof record?.left === 'boolean' ? record.left : undefined;
+            const userName =
+                typeof record?.user_name === 'string' ? record.user_name.trim() : '';
             rows.push({
                 groupId,
                 userId,
@@ -185,6 +207,8 @@ export function listBanRecords(): BanRecordRow[] {
                 banTime,
                 remaining: Math.max(0, duration - elapsed),
                 ...(left === undefined ? {} : { left }),
+                ...(userName ? { userName } : {}),
+                ...(record?.remute === false ? { remute: false } : {}),
             });
         }
     }
@@ -304,6 +328,9 @@ export function updateBanDuration(
     if (!Number.isFinite(seconds) || seconds <= 0) {
         return { ok: false, message: '时长必须是大于 0 的秒数' };
     }
+    if (seconds > MAX_BAN_SECONDS) {
+        return { ok: false, message: `时长不能超过 30 天（${MAX_BAN_SECONDS} 秒）` };
+    }
 
     const records = loadBanRecords();
     const groupKey = String(groupId);
@@ -311,6 +338,14 @@ export function updateBanDuration(
     const record = records[groupKey]?.[userKey];
     if (!record) {
         return { ok: false, message: '这条禁言记录已经不在了（可能已过期），刷新后再试' };
+    }
+
+    // sm / smplus 的禁言压根不参与重禁，保留时长没有意义
+    if (record.remute === false) {
+        return {
+            ok: false,
+            message: '这条禁言来自 sm / smplus，不参与退群重进重禁，不需要改时长',
+        };
     }
 
     const banTime = Number(record.ban_time) || Math.floor(Date.now() / 1000);
@@ -355,8 +390,12 @@ export function migrateBanRecord(
         return { ok: false, message: '目标群里已经有这个人的禁言记录了，请先删掉其中一条' };
     }
 
+    // 「是否退群」记的是原来那个群的退群状态，搬到新群后已经无从判断，复位成未知
+    const moved: BanRecord = { ...record };
+    delete moved.left;
+
     if (!records[to]) records[to] = {};
-    records[to][userKey] = record;
+    records[to][userKey] = moved;
     delete records[from][userKey];
     if (!Object.keys(records[from]).length) delete records[from];
     saveBanRecords(records);

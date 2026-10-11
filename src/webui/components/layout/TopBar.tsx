@@ -8,6 +8,7 @@ const TITLES: Record<PageKey, { title: string; desc: string }> = {
     global: { title: '全局设置', desc: '总开关、命令前缀、Bot 管理员与通用提示文案' },
     profiles: { title: '群配置', desc: '一条配置可绑定多个群，功能按配置独立生效' },
     data: { title: '群数据', desc: '禁言记录、黑历史与撤回记录的查看与管理' },
+    broadcast: { title: '发送消息', desc: '手动向选中的群群发消息（纯文本 + @全体成员）' },
 };
 
 /** 吸顶顶栏：页面标题 + 保存状态 + 全局保存 / 刷新 */

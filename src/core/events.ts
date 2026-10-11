@@ -120,46 +120,64 @@ async function run(
     if (!matched.length) return false;
 
     const context = buildContext(event);
-    let handled = false;
 
-    for (const h of matched) {
-        // 该群未启用此功能 → 跳过（feature 为 null 表示不受群开关限制）
-        if (h.feature && context.groupId && !getFeatureSettings(context.groupId, h.feature).enabled) continue;
-        handled = true;
-        stats.eventHandled += 1;
+    // 该群未启用此功能 → 跳过（feature 为 null 表示不受群开关限制）
+    const runnable = matched.filter(
+        (h) =>
+            !h.feature ||
+            !context.groupId ||
+            getFeatureSettings(context.groupId, h.feature).enabled,
+    );
+    if (!runnable.length) return false;
 
-        // 事件通知不带昵称，按需反查（有缓存与超时保护）
-        const actorId = context.operatorId || context.userId;
-        const userName = await resolveNickname(context.groupId, actorId);
+    // 一次事件只记一条调用日志。
+    // 同一个事件可能被多个处理器关心（例如退群同时挂了退群标记 / 踢人回执 / 踢人保护），
+    // 以前是每个处理器各记一条，导致日志里出现多条内容完全相同的记录。
+    const features = [
+        ...new Set(runnable.map((h) => h.feature).filter((f): f is FeatureKey => f !== null)),
+    ];
+    const feature = features.length === 1 ? features[0] : 'system';
 
-        const activity = beginActivity({
-            source: 'event',
-            action: `${label}:${kind}`,
-            feature: h.feature ?? 'system',
-            groupId: context.groupId,
-            userId: actorId,
-            userName,
-            input: eventSummary(event),
-        });
+    // 事件通知不带昵称，按需反查（有缓存与超时保护）
+    const actorId = context.operatorId || context.userId;
+    const userName = await resolveNickname(context.groupId, actorId);
 
+    stats.eventHandled += 1;
+
+    const activity = beginActivity({
+        source: 'event',
+        action: `${label}:${kind}`,
+        feature,
+        groupId: context.groupId,
+        userId: actorId,
+        userName,
+        input: eventSummary(event),
+    });
+
+    logDebug(`[群管助手] 事件 ${label}/${kind} | 群 ${context.groupId}`);
+
+    // 处理器之间互相独立：某一个抛错不影响后面的，最后汇总进同一条日志的结果里
+    let failure = '';
+    for (const h of runnable) {
         try {
-            logDebug(`[群管助手] 事件 ${label}/${kind} | 群 ${context.groupId}`);
             await h.handler(context);
-            activity.finish('ok');
         } catch (e) {
+            failure = e instanceof Error ? e.message : String(e);
             // 上下文显式传入：不依赖全局 activeErrorContext，避免与并发的命令记录互相覆盖
             logError(`[群管助手] 处理事件 ${label}/${kind} 失败:`, e, {
                 source: 'event',
-                feature: h.feature ?? 'system',
+                feature,
                 groupId: context.groupId,
                 userId: actorId,
                 userName,
             });
-            activity.finish('fail', e instanceof Error ? e.message : String(e));
         }
     }
 
-    return handled;
+    if (failure) activity.finish('fail', failure);
+    else activity.finish('ok');
+
+    return true;
 }
 
 export async function dispatchNotice(event: RawEventLike): Promise<boolean> {

@@ -9,6 +9,19 @@ import type { FeatureMeta, FeatureSettings, ParamMeta } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store';
 
+/**
+ * 这个功能展开后是否会有「参数」区块。
+ *
+ * 和 ParamsSection 的过滤规则保持一致：只有「提示文案」分组的参数（如黑历史）
+ * 或全在「使用权限」里的功能，不该出现一个空的「参数」标题。
+ */
+export function hasParamsSection(meta: FeatureMeta): boolean {
+    if (meta.actions?.length) return true;
+    return (meta.params ?? []).some(
+        (param) => param.group !== TEXT_GROUP && param.slot !== 'permission',
+    );
+}
+
 /** 参数区：按 group 分组；提示文案那一组统一挪到「提示文案」页签，这里不重复展示 */
 export function ParamsSection({
     meta,

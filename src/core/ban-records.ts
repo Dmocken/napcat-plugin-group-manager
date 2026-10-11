@@ -26,6 +26,20 @@ export interface BanRecord {
      *   undefined= 老数据 / 没收到退群通知，无法判断
      */
     left?: boolean;
+    /**
+     * 禁言时的昵称（优先群名片）。
+     *
+     * 通知事件只带 QQ 号，这里是异步反查后补写的；拿不到（接口失败 / 已退群）
+     * 就没有该字段，WebUI 会退化成只显示号码。
+     */
+    user_name?: string;
+    /**
+     * 是否参与「退群重进重新禁言」。
+     *
+     * 缺省（含老数据）= 参与；`false` 表示这条禁言不该被重禁
+     * —— 目前只有 sm / smplus 这类娱乐向禁言会标成 false。
+     */
+    remute?: boolean;
 }
 
 export type BanRecords = Record<string, Record<string, BanRecord>>;
@@ -45,14 +59,101 @@ function isPending(record: BanRecord, now: number): boolean {
     return elapsed < Number(record.duration ?? 0);
 }
 
-export function addBanRecord(groupId: number | string, userId: number | string, duration: number): void {
+export function addBanRecord(
+    groupId: number | string,
+    userId: number | string,
+    duration: number,
+    options: { remute?: boolean } = {},
+): void {
     const records = loadBanRecords();
     const groupKey = String(groupId);
     const userKey = String(userId);
     if (!records[groupKey]) records[groupKey] = {};
     // 重新禁言说明人在群里，退群标记一并复位
-    records[groupKey][userKey] = { duration, ban_time: Math.floor(Date.now() / 1000), left: false };
+    records[groupKey][userKey] = {
+        duration,
+        ban_time: Math.floor(Date.now() / 1000),
+        left: false,
+        // 只有明确不参与时才写这个字段，老数据 / 默认都当作参与
+        ...(options.remute === false ? { remute: false } : {}),
+    };
     saveBanRecords(records);
+}
+
+/* ---------------- 不参与重禁的禁言（sm / smplus） ----------------
+ *
+ * group_ban 通知里看不出这条禁言是谁发起的（operator 永远是执行动作的 bot），
+ * 所以由发起方先打一个「待消费」标记，禁言通知写记录时再取用。
+ *
+ * 标记按「群 + 人」入队，并带上**发起时用的时长**：同一人在短时间内被不同方式
+ * 禁言时，只有时长对得上的那条通知才会消费它，避免互相抢占（随机时长撞车的
+ * 概率是 1/时长范围，可以忽略）。没被消费的标记会按 TTL 过期清掉。
+ */
+
+/** 标记有效期（毫秒）：禁言通知通常 1 秒内就到 */
+const NO_REMUTE_TTL = 10 * 1000;
+
+interface NoRemuteMark {
+    /** 发起时使用的禁言时长（秒），用于和通知里的 duration 对上 */
+    duration: number;
+    at: number;
+}
+
+const noRemutePending = new Map<string, NoRemuteMark[]>();
+
+const pendingKey = (groupId: number | string, userId: number | string): string =>
+    `${groupId}_${userId}`;
+
+/** 取该键未过期的标记队列（顺带清掉过期的） */
+function liveMarks(key: string): NoRemuteMark[] {
+    const list = (noRemutePending.get(key) ?? []).filter(
+        (mark) => Date.now() - mark.at <= NO_REMUTE_TTL,
+    );
+    if (list.length) noRemutePending.set(key, list);
+    else noRemutePending.delete(key);
+    return list;
+}
+
+function storeMarks(key: string, list: NoRemuteMark[]): void {
+    if (list.length) noRemutePending.set(key, list);
+    else noRemutePending.delete(key);
+}
+
+/** 标记接下来的这条禁言不参与退群重进重禁 */
+export function markNoRemuteBan(
+    groupId: number | string,
+    userId: number | string,
+    duration: number,
+): void {
+    const key = pendingKey(groupId, userId);
+    const list = liveMarks(key);
+    list.push({ duration: Math.floor(Number(duration)) || 0, at: Date.now() });
+    storeMarks(key, list);
+}
+
+/** 撤销最近一次标记（禁言接口直接失败时） */
+export function clearNoRemuteBan(groupId: number | string, userId: number | string): void {
+    const key = pendingKey(groupId, userId);
+    const list = liveMarks(key);
+    list.pop();
+    storeMarks(key, list);
+}
+
+/** 取用并清掉一条「时长对得上」的标记；没有匹配的就不消费 */
+export function consumeNoRemuteBan(
+    groupId: number | string,
+    userId: number | string,
+    duration: number,
+): boolean {
+    const key = pendingKey(groupId, userId);
+    const list = liveMarks(key);
+    const seconds = Math.floor(Number(duration)) || 0;
+    const index = list.findIndex((mark) => mark.duration === seconds);
+    if (index < 0) return false;
+
+    list.splice(index, 1);
+    storeMarks(key, list);
+    return true;
 }
 
 export function removeBanRecord(groupId: number | string, userId: number | string): void {
@@ -63,6 +164,31 @@ export function removeBanRecord(groupId: number | string, userId: number | strin
     delete records[groupKey][userKey];
     if (!Object.keys(records[groupKey]).length) delete records[groupKey];
     saveBanRecords(records);
+}
+
+/**
+ * 补写昵称。
+ *
+ * 昵称是异步反查的（见 core/nicknames.ts），记录本身要先落盘，
+ * 所以这里只是把查到的名字补回去；记录已经不存在（比如已解禁）时静默跳过。
+ */
+export function setBanRecordName(
+    groupId: number | string,
+    userId: number | string,
+    userName: string,
+): void {
+    const name = userName.trim();
+    if (!name) return;
+
+    try {
+        const records = loadBanRecords();
+        const record = records[String(groupId)]?.[String(userId)];
+        if (!record || record.user_name === name) return;
+        record.user_name = name;
+        saveBanRecords(records);
+    } catch {
+        /* 补写昵称失败不影响禁言记录本身 */
+    }
 }
 
 /** 标记 / 取消「已退群」；返回是否真的改动了 */
@@ -113,8 +239,9 @@ export function findPendingBan(
     // 1) 同群：只看到期与否
     const same = records[joinKey]?.[userKey];
     if (same) {
-        if (isPending(same, now)) hit = { groupId: joinKey, record: same };
-        else drop(joinKey);
+        if (!isPending(same, now)) drop(joinKey);
+        // sm / smplus 这类禁言不参与重禁，但仍然保留在记录里（界面要能看到）
+        else if (same.remute !== false) hit = { groupId: joinKey, record: same };
     }
 
     // 2) 同配置组的其它群：需要确认已退群
@@ -128,7 +255,7 @@ export function findPendingBan(
                 drop(groupKey);
                 continue;
             }
-            if (record.left !== true) continue;
+            if (record.left !== true || record.remute === false) continue;
             hit = { groupId: groupKey, record };
             break;
         }

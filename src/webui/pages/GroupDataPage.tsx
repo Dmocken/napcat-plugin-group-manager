@@ -11,7 +11,7 @@ import {
     Trash2,
     Users,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ import type {
     GroupProfile,
     RecallRow,
 } from '@/lib/types';
-import { cn, isQq } from '@/lib/utils';
+import { cn, isQq, useNowSeconds } from '@/lib/utils';
 import { useStore } from '@/store';
 
 /** 「没有记录群」的分组键（老黑历史数据没有 group_id） */
@@ -593,7 +593,15 @@ function MigrateDialog({
 
 /* ---------------- 禁言记录 ---------------- */
 
-function LeftBadge({ left }: { left?: boolean }): React.JSX.Element {
+function LeftBadge({ left, remute }: { left?: boolean; remute?: boolean }): React.JSX.Element {
+    // sm / smplus 的禁言不参与重禁，这里直接说明，免得看到「已退群」却等不到重禁
+    if (remute === false) {
+        return (
+            <span title="这条禁言来自 sm / smplus，退群重进时不会重新禁言">
+                <Badge variant="dashed">不重禁</Badge>
+            </span>
+        );
+    }
     if (left === true) {
         return (
             <span title="已退群：再次入群（含同配置组的其它群）时会按保留时长重新禁言">
@@ -611,46 +619,205 @@ function LeftBadge({ left }: { left?: boolean }): React.JSX.Element {
     );
 }
 
-function BanRow({
+/** QQ 群禁言时长上限：30 天（与后端 MAX_BAN_SECONDS 保持一致） */
+const MAX_BAN_SECONDS = 30 * 24 * 3600;
+
+interface DurationParts {
+    day: number;
+    hour: number;
+    minute: number;
+    second: number;
+}
+
+function splitDuration(seconds: number): DurationParts {
+    const s = Math.max(0, Math.floor(seconds));
+    return {
+        day: Math.floor(s / 86400),
+        hour: Math.floor((s % 86400) / 3600),
+        minute: Math.floor((s % 3600) / 60),
+        second: s % 60,
+    };
+}
+
+function joinDuration(parts: DurationParts): number {
+    return parts.day * 86400 + parts.hour * 3600 + parts.minute * 60 + parts.second;
+}
+
+/** 天 / 时 / 分 / 秒 下拉：省得手填秒数还要自己换算，也顺手卡住 QQ 的时长上限 */
+function DurationSelect({
+    label,
+    value,
+    max,
+    onChange,
+}: {
+    label: string;
+    value: number;
+    max: number;
+    onChange: (value: number) => void;
+}): React.JSX.Element {
+    return (
+        <div className="flex flex-col gap-1">
+            <span className="text-[12px] text-subtle">{label}</span>
+            <select
+                value={value}
+                onChange={(event) => onChange(Number(event.target.value))}
+                className="h-9 w-full cursor-pointer rounded-control border border-line bg-surface-2 px-2 text-[13px] text-ink transition-colors hover:border-line-strong focus:border-ink-2 focus:outline-none"
+            >
+                {Array.from({ length: max + 1 }, (_, index) => index).map((n) => (
+                    <option key={n} value={n}>
+                        {n}
+                    </option>
+                ))}
+            </select>
+        </div>
+    );
+}
+
+function BanDurationDialog({
+    open,
     row,
     userName,
-    onMigrate,
+    onClose,
 }: {
-    row: BanRecordRow;
+    open: boolean;
+    row: BanRecordRow | null;
     userName: string;
-    onMigrate: () => void;
+    onClose: () => void;
 }): React.JSX.Element {
     const update = useStore((s) => s.updateBanDuration);
-    const remove = useStore((s) => s.removeBanRecordRow);
-    const askConfirm = useStore((s) => s.askConfirm);
-    const toast = useStore((s) => s.toast);
-
-    const [draft, setDraft] = useState(String(row.duration));
+    const [parts, setParts] = useState<DurationParts>(splitDuration(0));
     const [saving, setSaving] = useState(false);
-    const dirty = draft.trim() !== String(row.duration);
 
-    const elapsed = Math.max(0, row.duration - row.remaining);
-    const endsAt = row.banTime + row.duration;
+    // 每次打开都从当前记录的时长起算，避免残留上一次的输入
+    useEffect(() => {
+        if (open) setParts(splitDuration(row?.duration ?? 0));
+    }, [open, row]);
+
+    const total = joinDuration(parts);
+    // 后端要求新时长大于「已经过去的时间」，否则这条记录会立刻过期
+    const elapsed = row ? Math.max(0, row.duration - row.remaining) : 0;
+    const error =
+        total <= 0
+            ? '时长不能为 0'
+            : total > MAX_BAN_SECONDS
+              ? '不能超过 30 天（QQ 上限）'
+              : total <= elapsed
+                ? `必须大于已过去的 ${durationText(elapsed)}`
+                : '';
 
     const submit = async (): Promise<void> => {
-        const seconds = Number(draft.trim());
-        if (!Number.isFinite(seconds) || seconds <= 0) {
-            toast('时长必须是大于 0 的秒数', 'err');
-            return;
-        }
+        if (!row || error) return;
         setSaving(true);
         try {
-            await update(row.groupId, row.userId, seconds);
+            await update(row.groupId, row.userId, total);
+            onClose();
         } finally {
             setSaving(false);
         }
     };
 
-    const removeRow = async (): Promise<void> => {
+    return (
+        <Dialog
+            open={open}
+            onOpenChange={(next) => {
+                if (!next) onClose();
+            }}
+        >
+            <DialogContent className="max-w-[460px]">
+                <div className="p-5">
+                    <DialogTitle>修改保留时长</DialogTitle>
+                    <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
+                        {userName || row?.userId}（{row?.userId}）退群重进时，会按这个时长从头重新禁言。
+                    </p>
+                    <div className="mt-4 grid grid-cols-4 gap-3">
+                        <DurationSelect
+                            label="天"
+                            value={parts.day}
+                            // 封顶 29：这样天/时/分/秒怎么组合都不会超过 QQ 的 30 天上限
+                            max={29}
+                            onChange={(day) => setParts((prev) => ({ ...prev, day }))}
+                        />
+                        <DurationSelect
+                            label="时"
+                            value={parts.hour}
+                            max={23}
+                            onChange={(hour) => setParts((prev) => ({ ...prev, hour }))}
+                        />
+                        <DurationSelect
+                            label="分"
+                            value={parts.minute}
+                            max={59}
+                            onChange={(minute) => setParts((prev) => ({ ...prev, minute }))}
+                        />
+                        <DurationSelect
+                            label="秒"
+                            value={parts.second}
+                            max={59}
+                            onChange={(second) => setParts((prev) => ({ ...prev, second }))}
+                        />
+                    </div>
+                    {/* 只保留校验提示（保存按钮会因此置灰，得让用户知道为什么） */}
+                    {error ? <p className="mt-3 text-[12px] text-ink-2">{error}</p> : null}
+                    <div className="mt-5 flex items-center justify-end gap-2">
+                        <Button onClick={onClose}>取消</Button>
+                        <Button
+                            loading={saving}
+                            disabled={Boolean(error)}
+                            onClick={() => void submit()}
+                        >
+                            保存
+                        </Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function BanRow({
+    row,
+    userName,
+    since,
+    onEditDuration,
+    onMigrate,
+}: {
+    row: BanRecordRow;
+    userName: string;
+    /** 距离这批数据从服务端拉回来过去了多少秒（用于本地实时走动） */
+    since: number;
+    onEditDuration: () => void;
+    onMigrate: () => void;
+}): React.JSX.Element {
+    const remove = useStore((s) => s.removeBanRecordRow);
+    const unban = useStore((s) => s.unbanMember);
+    const askConfirm = useStore((s) => s.askConfirm);
+
+    // 服务端给的 remaining 是拉取那一刻的值，这里按本地流逝的秒数推算，
+    // 于是「已禁言 / 剩余」每秒都在走，不需要反复请求接口
+    const remaining = Math.max(0, row.remaining - since);
+    const elapsed = Math.min(row.duration, row.duration - row.remaining + since);
+    const expired = remaining <= 0;
+    const endsAt = row.banTime + row.duration;
+
+    /** 人还在群里 → 解禁（顺带删条目）；已退群 → 只能删条目 */
+    const inGroup = row.left !== true;
+
+    const actOnRow = async (): Promise<void> => {
+        const who = `${userName || row.userId}（${row.userId}）`;
+
+        if (inGroup) {
+            const ok = await askConfirm(
+                '解除禁言',
+                `将解除 ${who} 在本群的禁言，并删除这条记录。`,
+                'danger',
+            );
+            if (ok) await unban(row.groupId, row.userId);
+            return;
+        }
+
         const ok = await askConfirm(
-            '删除禁言记录',
-            `将删除 ${userName || row.userId}（${row.userId}）的禁言记录；\n` +
-                '删除后该成员退群重进时不再按原时长重新禁言。',
+            '删除记录',
+            `将删除 ${who} 的禁言记录；该成员已退群，再次入群后将不会重新禁言。`,
             'danger',
         );
         if (ok) await remove(row.groupId, row.userId);
@@ -664,9 +831,15 @@ function BanRow({
                 name={userName}
                 className="w-[168px] shrink-0"
             />
-            <span className="w-[80px] shrink-0 text-[12px] text-subtle">{durationText(elapsed)}</span>
-            <span className="w-[80px] shrink-0 text-[12px] text-ink-2">
-                {durationText(row.remaining)}
+            <span className="w-[112px] shrink-0 text-[12px] text-subtle">
+                {durationText(elapsed)}
+                <span className="text-subtle/70"> / {durationText(row.duration)}</span>
+            </span>
+            <span
+                className={cn('w-[80px] shrink-0 text-[12px]', expired ? 'text-subtle' : 'text-ink-2')}
+                title={expired ? '这条记录已过期，刷新后会被清掉' : undefined}
+            >
+                {expired ? '已过期' : durationText(remaining)}
             </span>
             <span className="w-[100px] shrink-0 font-mono-num text-[11px] text-subtle">
                 {timeText(row.banTime)}
@@ -675,40 +848,26 @@ function BanRow({
                 {timeText(endsAt)}
             </span>
             <span className="w-[72px] shrink-0">
-                <LeftBadge left={row.left} />
+                <LeftBadge left={row.left} remute={row.remute} />
             </span>
 
             <div className="ml-auto flex shrink-0 items-center gap-2">
-                <div className="relative">
-                    <Input
-                        className="h-7 w-[88px] pr-6 font-mono-num text-[12px]"
-                        value={draft}
-                        inputMode="numeric"
-                        title="保留时长（秒）"
-                        onChange={(event) => setDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (event.key === 'Enter') void submit();
-                        }}
-                    />
-                    <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-[10px] text-subtle">
-                        秒
-                    </span>
-                </div>
-                <Button size="xs" loading={saving} disabled={!dirty} onClick={() => void submit()}>
-                    保存
-                </Button>
+                {/* 不参与重禁的记录（sm / smplus）改时长没有意义，直接不给入口 */}
+                {row.remute === false ? null : (
+                    <Button size="xs" variant="ghost" onClick={onEditDuration}>
+                        改时长
+                    </Button>
+                )}
                 <Button size="xs" variant="ghost" title="迁移到别的群" onClick={onMigrate}>
                     迁移
                 </Button>
                 <Button
+                    size="xs"
                     variant="ghost"
-                    size="iconSm"
-                    className="size-7"
-                    title="删除这条记录"
-                    aria-label="删除这条记录"
-                    onClick={() => void removeRow()}
+                    title={inGroup ? '解除群成员禁言并删除这条记录' : '删除这条记录'}
+                    onClick={() => void actOnRow()}
                 >
-                    <Trash2 className="size-3.5" />
+                    {inGroup ? '解禁' : '删除'}
                 </Button>
             </div>
         </div>
@@ -726,6 +885,15 @@ function BanRecordsPanel(): React.JSX.Element {
 
     const [selected, setSelected] = useState(NO_GROUP);
     const [migrating, setMigrating] = useState<BanRecordRow | null>(null);
+    const [editingDuration, setEditingDuration] = useState<BanRecordRow | null>(null);
+
+    // 实时走动：以「这批数据拉到手的时刻」为锚点，用本地时钟推算已经过去多少秒
+    const now = useNowSeconds();
+    const fetchedAt = useRef(Math.floor(Date.now() / 1000));
+    useEffect(() => {
+        fetchedAt.current = Math.floor(Date.now() / 1000);
+    }, [rows]);
+    const since = Math.max(0, now - fetchedAt.current);
 
     const sections = useMemo(
         () => buildSections(countByGroup(rows), profiles),
@@ -815,12 +983,12 @@ function BanRecordsPanel(): React.JSX.Element {
 
                             <div className="flex items-center gap-3 border-b border-line bg-surface/80 px-4 py-1.5 text-[11px] text-subtle">
                                 <span className="w-[168px] shrink-0">用户</span>
-                                <span className="w-[80px] shrink-0">已禁言</span>
+                                <span className="w-[112px] shrink-0">已禁言 / 总时长</span>
                                 <span className="w-[80px] shrink-0">剩余</span>
                                 <span className="w-[100px] shrink-0">禁言时间</span>
                                 <span className="w-[100px] shrink-0">解禁时间</span>
                                 <span className="w-[72px] shrink-0">是否退群</span>
-                                <span className="ml-auto shrink-0">保留时长(秒) / 操作</span>
+                                <span className="ml-auto shrink-0">操作</span>
                             </div>
 
                             <div className="max-h-[540px] overflow-auto">
@@ -828,15 +996,22 @@ function BanRecordsPanel(): React.JSX.Element {
                                     <BanRow
                                         key={`${row.groupId}-${row.userId}`}
                                         row={row}
-                                        userName={userName(row.userId)}
+                                        // 优先用记录里存下的群名片，老记录退回好友列表
+                                        userName={row.userName || userName(row.userId)}
+                                        since={since}
+                                        onEditDuration={() => setEditingDuration(row)}
                                         onMigrate={() => setMigrating(row)}
                                     />
                                 ))}
                             </div>
 
                             <SectionHint>
-                                「是否退群」来自退群 / 被踢通知：已退群的记录会在该成员重新入群（含同配置组的其它群）时按原时长重禁，
-                                未收到过退群通知的老数据显示为「未知」。改完保留时长即时生效，不需要保存配置。
+                                「已禁言 / 剩余」按本地时钟每秒实时走动，到点会显示「已过期」（刷新后由后端清掉）；
+                                列表每 5 秒自动刷新一次。「是否退群」来自退群 / 被踢通知：已退群的记录会在该成员重新入群
+                                （含同配置组的其它群）时按「总时长」从头重新禁言 —— 不扣掉已经过去的时间。
+                                sm / smplus 的禁言标为「不重禁」，退群重进后不会再禁一次。
+                                行尾按钮随状态变：成员还在群里是「解禁」（解除本群禁言 + 删记录，不发群消息），
+                                已退群则只是「删除」这条记录。昵称取自禁言时反查到的群名片，反查失败的老记录只显示号码。
                             </SectionHint>
                         </div>
                     </div>
@@ -847,9 +1022,9 @@ function BanRecordsPanel(): React.JSX.Element {
                 open={Boolean(migrating)}
                 subject={
                     migrating
-                        ? `${userName(migrating.userId) || migrating.userId}（${
-                              migrating.userId
-                          }）的禁言记录`
+                        ? `${
+                              migrating.userName || userName(migrating.userId) || migrating.userId
+                          }（${migrating.userId}）的禁言记录`
                         : ''
                 }
                 fromGroupId={migrating?.groupId ?? ''}
@@ -859,6 +1034,17 @@ function BanRecordsPanel(): React.JSX.Element {
                     migrating ? migrate(migrating.groupId, migrating.userId, target) : Promise.resolve()
                 }
                 onClose={() => setMigrating(null)}
+            />
+
+            <BanDurationDialog
+                open={Boolean(editingDuration)}
+                row={editingDuration}
+                userName={
+                    editingDuration
+                        ? editingDuration.userName || userName(editingDuration.userId)
+                        : ''
+                }
+                onClose={() => setEditingDuration(null)}
             />
         </>
     );
@@ -929,7 +1115,7 @@ function BlackRecordDialog({
                 <div className="p-5">
                     <DialogTitle>{record ? `编辑黑历史 #${record.id}` : '新增黑历史'}</DialogTitle>
                     <div className="mt-4 space-y-4">
-                        <Field label="所属群" hint="决定这条记录出现在哪个群下面；老数据没有群号">
+                        <Field label="所属群" hint="决定这条记录出现在哪个群下面">
                             <GroupSelectOne
                                 value={groupId}
                                 onChange={setGroupId}
@@ -1290,12 +1476,12 @@ function RecallRecordsPanel(): React.JSX.Element {
                 <PanelHeader
                     icon={<History className="size-4" />}
                     title="撤回记录"
-                    description="管理员撤回他人消息时记录下来的内容，保存在 data/recall_records.json；这里只做查看、删除与迁移（内容由 bot 自动记录）。"
+                    description="管理员撤回他人消息时记录下来的内容，保存在 data/recall_records.json；这里只做查看、删除与迁移。"
                     actions={
                         <>
                             <Button size="sm" loading={loading} onClick={() => void load()}>
                                 <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
-                                刷新
+                                刷新禁言记录
                             </Button>
                             <Button
                                 size="sm"
@@ -1348,7 +1534,8 @@ function RecallRecordsPanel(): React.JSX.Element {
                                     <RecallUserRow
                                         key={`${row.groupId}-${row.userId}`}
                                         row={row}
-                                        userName={userName(row.userId)}
+                                        // 优先用记录里存下的群名片，老记录退回好友列表
+                                        userName={row.userName || userName(row.userId)}
                                         onMigrate={() => setMigrating(row)}
                                     />
                                 ))}
@@ -1356,6 +1543,7 @@ function RecallRecordsPanel(): React.JSX.Element {
 
                             <SectionHint>
                                 一条 = 某群某个被撤回消息的成员；展开可看每次撤回的撤回人与内容，迁移可把它挂到别的群下。
+                                昵称来自记录时的反查，早期记录或反查失败时只显示号码。
                             </SectionHint>
                         </div>
                     </div>
@@ -1366,9 +1554,9 @@ function RecallRecordsPanel(): React.JSX.Element {
                 open={Boolean(migrating)}
                 subject={
                     migrating
-                        ? `${userName(migrating.userId) || migrating.userId}（${
-                              migrating.userId
-                          }）的撤回记录`
+                        ? `${
+                              migrating.userName || userName(migrating.userId) || migrating.userId
+                          }（${migrating.userId}）的撤回记录`
                         : ''
                 }
                 fromGroupId={migrating?.groupId ?? ''}
@@ -1397,8 +1585,15 @@ export function GroupDataPage(): React.JSX.Element {
     const load = useStore((s) => s.loadGroupData);
     const [tab, setTab] = useState<DataTab>('ban');
 
+    // 与概览页日志同样的节奏：进页面拉一次，之后每 5s 静默刷新一次。
+    // 页面切走时组件会卸载，定时器跟着清掉；标签页在后台时跳过，免得白请求。
     useEffect(() => {
         void load();
+        const id = window.setInterval(() => {
+            if (document.hidden) return;
+            void load({ silent: true });
+        }, 5000);
+        return () => window.clearInterval(id);
     }, [load]);
 
     return (

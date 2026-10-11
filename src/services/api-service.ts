@@ -14,7 +14,11 @@ import type {
 
 import { DEFAULT_AI_PROMPT, DEFAULT_GLOBAL, DEFAULT_JUDGE_WORDS, FEATURES, FEATURE_KEYS } from '../constants';
 import { parseAiVerdict, testAiConnection } from './ai-judge';
+import { beginActivity, noteActivitySent, withActivity } from '../core/activity';
+import { at, callAction, seg, type Seg } from '../core/messages';
+import { isPluginEnabled } from '../core/permission';
 import { findProfileByGroup, newProfile, saveProfiles, validateProfiles } from '../core/profiles';
+import { randomInt } from '../core/utils';
 import {
     clearSnapshot,
     exportSnapshot,
@@ -220,6 +224,109 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         }
     });
 
+    /* ---------------- 群发消息（WebUI「发送消息」页） ---------------- */
+
+    /** 群间间隔上限（秒）：再大只会把整轮请求拖到协议端超时 */
+    const GAP_LIMIT = 600;
+
+    /** 间隔取值：非法 / 缺省回退默认值，并收进 [0, GAP_LIMIT] */
+    const gapOf = (value: unknown, def: number): number => {
+        const n = Math.floor(Number(value));
+        if (!Number.isFinite(n)) return def;
+        return Math.min(Math.max(n, 0), GAP_LIMIT);
+    };
+
+    const sleep = (ms: number): Promise<void> =>
+        ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+
+    /**
+     * 群发纯文本（可选 @全体成员）。
+     *
+     * 逐群串行发送，群与群之间随机等待 gapMin ~ gapMax 秒（前端可自定义，不设群数上限）。
+     * 整轮只落一条「功能调用日志」（source = api，面板显示为「接口」），
+     * 各群的发送结果用 ⏎ 合并进 sent，避免每群一条把日志刷屏。
+     */
+    post('/send', async (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+
+        // 群号：去重、保序、逐个校验（不限制数量，但会按间隔串行发）
+        const seen = new Set<string>();
+        const groups: string[] = [];
+        for (const item of Array.isArray(body.groups) ? body.groups : []) {
+            const gid = String(item ?? '').trim();
+            if (!gid || seen.has(gid)) continue;
+            if (!/^\d{5,12}$/.test(gid)) return fail(res, 400, `群号格式不正确：${gid}`);
+            seen.add(gid);
+            groups.push(gid);
+        }
+        if (!groups.length) return fail(res, 400, '请至少选择一个群');
+
+        // 本轮只做纯文本 + @全体成员：正文必填（只有 @ 没有正文的消息会被协议端拒收）
+        const content = typeof body.text === 'string' ? body.text.trim() : '';
+        if (!content) return fail(res, 400, '正文不能为空');
+
+        const atAll = body.atAll === true;
+
+        if (!isPluginEnabled()) return fail(res, 503, '插件总开关已关闭，请先在「全局设置」里打开');
+
+        const gapMin = gapOf(body.gapMin, 1);
+        const gapMax = gapOf(body.gapMax, 3);
+
+        // @ 与正文之间留一个空格：QQ 里显示为「@全体成员 正文」，不粘在一起
+        const atLabel = atAll ? '@全体成员' : '';
+        const summary = atLabel ? `${atLabel} ${content}` : content;
+
+        const segments: Seg[] = [];
+        if (atAll) segments.push(at('all'));
+        segments.push(seg('text', { text: atLabel ? ` ${content}` : content }));
+
+        const activity = beginActivity({
+            source: 'api',
+            action: 'send',
+            feature: 'system',
+            groupId: groups.length === 1 ? groups[0] : '',
+            input: `${groups.length} 个群：${summary}`,
+        });
+
+        const failed: { groupId: string; error: string }[] = [];
+        const startedAtMs = Date.now();
+
+        // withActivity：整轮把这条记录钉在栈顶 —— 群发要跑很久，期间群里可能有别的
+        // 命令在跑，不钉住的话某条发送摘要会被记进那条命令的记录里
+        await withActivity(activity, async () => {
+            for (let i = 0; i < groups.length; i += 1) {
+                const gid = groups[i];
+                // 第一条不等待，之后每条前面随机停一下，降低被风控的概率
+                if (i > 0) await sleep(randomInt(gapMin, gapMax) * 1000);
+                try {
+                    await callAction('send_group_msg', { group_id: gid, message: segments });
+                    noteActivitySent(`群 ${gid}：${summary}`);
+                } catch (e) {
+                    failed.push({
+                        groupId: gid,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                    // 只进 NapCat 控制台：失败明细已汇总在调用日志里，不必再刷 errors.log
+                    ctx.logger.warn(`[群管助手] 群发失败 group=${gid}:`, e);
+                }
+            }
+        });
+
+        const okCount = groups.length - failed.length;
+        const cost = ((Date.now() - startedAtMs) / 1000).toFixed(1);
+        activity.finish(
+            failed.length ? 'fail' : 'ok',
+            failed.length
+                ? `成功 ${okCount} / 失败 ${failed.length}，耗时 ${cost}s；失败：${failed
+                      .map((item) => `${item.groupId}（${item.error}）`)
+                      .join('；')}`
+                : `全部成功，耗时 ${cost}s`,
+        );
+
+        ctx.logger.info(`[群管助手] 群发完成：${okCount}/${groups.length} 个群，耗时 ${cost}s`);
+        res.json({ code: 0, data: { total: groups.length, ok: okCount, failed } });
+    });
+
     /* ---------------- 群配置条目 ---------------- */
 
     get('/profiles', (_req, res) => {
@@ -362,6 +469,34 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
     post('/data/black-history/clear', (_req, res) => {
         const removed = clearBlackHistory();
         res.json({ code: 0, data: { records: listBlackRecordRows(), removed } });
+    });
+
+    /**
+     * 解除禁言并删掉记录。
+     *
+     * 只调接口、不发任何群消息（群里的 ban 命令才会播报）。
+     * set_group_ban 是操作型接口，成功失败都只抛「No data returned」，
+     * 对方不在群里也拿不到明确回执，所以这里失败只记日志，记录照删。
+     */
+    post('/data/ban-records/unban', async (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const groupId = String(body.groupId ?? '').trim();
+        const userId = String(body.userId ?? '').trim();
+        if (!groupId || !userId) return fail(res, 400, '缺少群号或 QQ 号');
+
+        try {
+            await ctx.actions.call(
+                'set_group_ban',
+                { group_id: groupId, user_id: userId, duration: 0 },
+                ctx.adapterName,
+                ctx.pluginManager.config,
+            );
+        } catch (e) {
+            ctx.logger.warn('[群管助手] 解除禁言失败:', e);
+        }
+
+        removeBanRow(groupId, userId);
+        res.json({ code: 0, data: { records: listBanRecords() } });
     });
 
     post('/data/ban-records/migrate', (req, res) => {

@@ -19,13 +19,15 @@ import type {
     GroupProfile,
     MetaResponse,
     RecallRow,
+    SendPayload,
+    SendResult,
     StatusInfo,
     ToastItem,
     ToastKind,
 } from '@/lib/types';
 
 /** 左侧导航的页面 */
-export type PageKey = 'overview' | 'global' | 'profiles' | 'data';
+export type PageKey = 'overview' | 'global' | 'profiles' | 'data' | 'broadcast';
 
 /** 可导出 / 清空的日志文件 */
 export type LogTarget = 'errors' | 'activity';
@@ -42,6 +44,28 @@ interface ConfirmState {
     tone: 'default' | 'danger';
     resolve: (ok: boolean) => void;
 }
+
+/** 「发送消息」页的编辑草稿：只存在内存里，切到别的页面再回来内容还在 */
+export interface BroadcastDraft {
+    /** 已勾选的群号 */
+    groups: string[];
+    /** 群列表的搜索关键字 */
+    keyword: string;
+    content: string;
+    atAll: boolean;
+    /** 群间随机间隔（秒），输入框里是字符串，发出去前再解析 */
+    gapMin: string;
+    gapMax: string;
+}
+
+const EMPTY_BROADCAST: BroadcastDraft = {
+    groups: [],
+    keyword: '',
+    content: '',
+    atAll: false,
+    gapMin: '1',
+    gapMax: '3',
+};
 
 interface StoreState {
     meta: MetaResponse | null;
@@ -121,12 +145,14 @@ interface StoreState {
 
     /* ---------------- 群数据 ---------------- */
 
-    /** 拉取禁言记录 / 黑历史 / 撤回记录 */
-    loadGroupData: () => Promise<void>;
+    /** 拉取禁言记录 / 黑历史 / 撤回记录；silent = 后台轮询，不转圈也不弹错误提示 */
+    loadGroupData: (options?: { silent?: boolean }) => Promise<void>;
     /** 修改禁言保留时长（秒）；失败时已自动提示 */
     updateBanDuration: (groupId: string, userId: string, duration: number) => Promise<void>;
-    /** 删除单条禁言记录 */
+    /** 删除单条禁言记录（成员已退群时用） */
     removeBanRecordRow: (groupId: string, userId: string) => Promise<void>;
+    /** 解除该成员在本群的禁言并删掉记录（成员在群里时用，不发群消息） */
+    unbanMember: (groupId: string, userId: string) => Promise<void>;
     /** 清空禁言记录：传群号只清该群，不传全清 */
     clearBanRecordRows: (groupId?: string) => Promise<void>;
     /** 把一条禁言记录迁移到另一个群 */
@@ -142,6 +168,17 @@ interface StoreState {
     ) => Promise<void>;
     /** 按编号删除黑历史 */
     removeBlackRecords: (ids: number[]) => Promise<void>;
+
+    /* ---------------- 群发消息（「发送消息」页） ---------------- */
+    broadcastDraft: BroadcastDraft;
+    /** 正在群发：切走页面再回来按钮仍在转圈，也不会被重复点一次 */
+    broadcasting: boolean;
+    /** 上一次群发的结果 */
+    broadcastResult: SendResult | null;
+    /** 修改草稿（不置 dirty，草稿不参与「保存全部配置」） */
+    patchBroadcast: (patch: Partial<BroadcastDraft>) => void;
+    /** 群发纯文本；返回逐群结果，null 表示整轮没发出去 */
+    sendBroadcast: (payload: SendPayload) => Promise<SendResult | null>;
     /** 清空黑历史 */
     clearBlackHistory: () => Promise<void>;
     /** 删除某群某人的撤回记录 */
@@ -209,6 +246,9 @@ export const useStore = create<StoreState>()(
         blackHistory: [],
         recallRecords: [],
         groupDataLoading: false,
+        broadcastDraft: { ...EMPTY_BROADCAST },
+        broadcasting: false,
+        broadcastResult: null,
 
         page: 'overview',
         activeProfileId: null,
@@ -545,12 +585,49 @@ export const useStore = create<StoreState>()(
             }
         },
 
+        /* ---------------- 群发消息 ---------------- */
+
+        patchBroadcast: (patch) =>
+            set((draft) => {
+                Object.assign(draft.broadcastDraft, patch);
+            }),
+
+        sendBroadcast: async (payload) => {
+            if (get().broadcasting) {
+                get().toast('上一轮群发还没发完，请稍候', 'err');
+                return null;
+            }
+            set((draft) => {
+                draft.broadcasting = true;
+                draft.broadcastResult = null;
+            });
+            try {
+                const data = await request<SendResult>('/send', { method: 'POST', body: payload });
+                set((draft) => {
+                    draft.broadcastResult = data ?? null;
+                });
+                // 整轮只落一条调用日志，发完立刻刷新一次让面板看到
+                void get().refreshActivities();
+                return data ?? null;
+            } catch (error) {
+                get().handleError(error, '发送失败：');
+                return null;
+            } finally {
+                set((draft) => {
+                    draft.broadcasting = false;
+                });
+            }
+        },
+
         /* ---------------- 群数据 ---------------- */
 
-        loadGroupData: async () => {
-            set((draft) => {
-                draft.groupDataLoading = true;
-            });
+        loadGroupData: async (options) => {
+            const silent = options?.silent === true;
+            if (!silent) {
+                set((draft) => {
+                    draft.groupDataLoading = true;
+                });
+            }
             try {
                 const [ban, black, recall] = await Promise.all([
                     request<{ records: BanRecordRow[] }>('/data/ban-records').catch(() => ({
@@ -569,11 +646,15 @@ export const useStore = create<StoreState>()(
                     draft.recallRecords = recall?.records ?? [];
                 });
             } catch (error) {
+                // 后台轮询失败不打扰用户（需要密码时照常弹框）
+                if (silent && !(error instanceof NeedPasswordError)) return;
                 get().handleError(error, '读取群数据失败：');
             } finally {
-                set((draft) => {
-                    draft.groupDataLoading = false;
-                });
+                if (!silent) {
+                    set((draft) => {
+                        draft.groupDataLoading = false;
+                    });
+                }
             }
         },
 
@@ -634,6 +715,21 @@ export const useStore = create<StoreState>()(
                 get().toast('已删除该条禁言记录');
             } catch (error) {
                 get().handleError(error, '删除失败：');
+            }
+        },
+
+        unbanMember: async (groupId, userId) => {
+            try {
+                const data = await request<{ records: BanRecordRow[] }>('/data/ban-records/unban', {
+                    method: 'POST',
+                    body: { groupId, userId },
+                });
+                set((draft) => {
+                    draft.banRecords = data?.records ?? [];
+                });
+                get().toast('已解除禁言并删除记录');
+            } catch (error) {
+                get().handleError(error, '解除禁言失败：');
             }
         },
 

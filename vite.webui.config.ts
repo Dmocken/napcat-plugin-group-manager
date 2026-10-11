@@ -20,6 +20,8 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
+import { mockApiPlugin } from './dev/webui-mock-api';
+
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const webuiRoot = path.join(projectRoot, 'src/webui');
 
@@ -130,7 +132,8 @@ function inlineSingleFile(): Plugin {
 export default defineConfig({
     root: webuiRoot,
     base: './',
-    plugins: [react(), tailwindcss(), inlineSingleFile()],
+    // mockApiPlugin 只在 dev（serve）生效，给本地预览提供假数据；构建时被忽略
+    plugins: [react(), tailwindcss(), mockApiPlugin(), inlineSingleFile()],
     define: {
         /** 左侧导航显示的代码版本，见 buildMeta() */
         __BUILD_COMMIT__: JSON.stringify(meta.commit),

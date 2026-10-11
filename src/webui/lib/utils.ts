@@ -102,6 +102,23 @@ export function formatUptime(seconds: number): string {
 }
 
 /**
+ * 每秒自增的当前时间戳（秒）。
+ *
+ * 用于让「剩余时长 / 已禁言时长」这类数值在页面上实时走动，
+ * 不必为了一个倒计时反复请求接口。
+ */
+export function useNowSeconds(): number {
+    const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+
+    useEffect(() => {
+        const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+        return () => window.clearInterval(id);
+    }, []);
+
+    return now;
+}
+
+/**
  * 运行时长实时走秒：以后端上报的秒数为锚点本地每秒自增，
  * 仅靠轮询时读数会整段跳变，这里保证「已运行」逐秒可见地变化。
  */

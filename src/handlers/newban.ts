@@ -42,6 +42,11 @@ registerNotice('group_increase', 'newban', async (ctx) => {
     const duration = remute ? Math.max(0, Math.floor(Number(pending?.duration) || 0)) : banDuration;
     const timeStr = formatDuration(duration);
 
+    // 0) 先消费记录再发起禁言。
+    // 禁言生效后 NapCat 会推 group_ban，那条通知会给同一条 key 写入新记录；
+    // 如果反过来「先禁言、最后再删」，删除就可能落在新记录之后，把它误删掉。
+    if (hit) removeBanRecord(hit.groupId, userId);
+
     // 1) 禁言（与文案分开 try，任何一步失败都能在日志里看出是哪一步）
     try {
         await callAction('set_group_ban', {
@@ -75,9 +80,6 @@ registerNotice('group_increase', 'newban', async (ctx) => {
     } catch (e) {
         logError(`[群管助手] 入群文案发送失败 group=${groupId} user=${userId}:`, e);
     }
-
-    // 命中哪条就消费哪条（可能是同配置组里的另一个群留下的记录）
-    if (hit) removeBanRecord(hit.groupId, userId);
 });
 
 registerCommand({

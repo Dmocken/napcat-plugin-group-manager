@@ -99,6 +99,12 @@ registerNotice('group_recall', 'recall_stats', async (ctx) => {
     if (!data[groupKey]) data[groupKey] = {};
     if (!data[groupKey][targetKey]) data[groupKey][targetKey] = { count: 0, records: [] };
 
+    // 记下被撤回人的昵称，WebUI 的「撤回记录」列表要用（老数据没有该字段）。
+    // fetchMemberName 查不到时会退化成 QQ 号，那种情况不写，让前端继续显示号码。
+    if (targetName && targetName !== targetKey) {
+        data[groupKey][targetKey].name = targetName;
+    }
+
     data[groupKey][targetKey].records.push({
         operator_id: operatorId,
         operator_name: operatorName,

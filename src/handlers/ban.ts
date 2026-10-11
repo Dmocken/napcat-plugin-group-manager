@@ -9,9 +9,17 @@
  */
 
 import { currentActivity, withActivity, type ActivityHandle } from '../core/activity';
-import { addBanRecord, cleanExpiredBanRecords, removeBanRecord, setBanRecordLeft } from '../core/ban-records';
+import {
+    addBanRecord,
+    cleanExpiredBanRecords,
+    consumeNoRemuteBan,
+    removeBanRecord,
+    setBanRecordLeft,
+    setBanRecordName,
+} from '../core/ban-records';
 import { registerNotice } from '../core/events';
 import { callAction, replyIdOf, sendGroup } from '../core/messages';
+import { resolveNickname } from '../core/nicknames';
 import { isGlobalAdmin } from '../core/permission';
 import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
@@ -235,7 +243,16 @@ registerCommand({
 /** 禁言记录：任何群都要记录（新人禁言的「退群重进重禁」依赖它），因此不受功能开关限制 */
 registerNotice('group_ban', null, async (ctx) => {
     if (ctx.event.duration && ctx.event.duration > 0) {
-        addBanRecord(ctx.groupId, ctx.userId, ctx.event.duration);
+        // sm / smplus 打的标记：这类禁言不参与「退群重进重新禁言」
+        // （标记带预期时长，只有时长对得上的通知才消费它）
+        const remute = !consumeNoRemuteBan(ctx.groupId, ctx.userId, ctx.event.duration);
+        addBanRecord(ctx.groupId, ctx.userId, ctx.event.duration, { remute });
+
+        // 通知事件只带 QQ 号，昵称要反查（有缓存与超时保护）。
+        // 不 await：记录先落盘，查到名字再补写，免得接口慢的时候拖住事件处理。
+        void resolveNickname(ctx.groupId, ctx.userId).then((name) => {
+            if (name) setBanRecordName(ctx.groupId, ctx.userId, name);
+        });
     } else {
         removeBanRecord(ctx.groupId, ctx.userId);
     }

@@ -7,6 +7,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PasswordDialog } from '@/components/PasswordDialog';
 import { Toaster } from '@/components/Toaster';
+import { BroadcastPage } from '@/pages/BroadcastPage';
 import { GlobalSettingsPage } from '@/pages/GlobalSettingsPage';
 import { GroupDataPage } from '@/pages/GroupDataPage';
 import { OverviewPage } from '@/pages/OverviewPage';
@@ -102,6 +103,8 @@ export function App(): React.JSX.Element {
                             <GlobalSettingsPage />
                         ) : page === 'data' ? (
                             <GroupDataPage />
+                        ) : page === 'broadcast' ? (
+                            <BroadcastPage />
                         ) : (
                             <ProfilesPage />
                         )}

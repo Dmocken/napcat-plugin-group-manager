@@ -10,6 +10,7 @@
  */
 
 import type { CommandContext } from '../types';
+import { clearNoRemuteBan, markNoRemuteBan } from '../core/ban-records';
 import { callAction, sendGroup } from '../core/messages';
 import { checkFeatureAccess, isGlobalAdmin } from '../core/permission';
 import { registerCommand } from '../core/router';
@@ -26,6 +27,8 @@ async function banUser(
     max: number,
 ): Promise<void> {
     const muteSeconds = randomInt(min, max);
+    // 娱乐向禁言：退群重进后不按原时长重新禁言（标记由 group_ban 通知取用）
+    markNoRemuteBan(c.groupId, targetId, muteSeconds);
     try {
         await callAction('set_group_ban', {
             group_id: String(c.groupId),
@@ -44,6 +47,7 @@ async function banUser(
             ),
         );
     } catch (e) {
+        clearNoRemuteBan(c.groupId, targetId);
         logError('[群管助手] 随机禁言失败:', e);
         await sendGroup(
             c.groupId,
