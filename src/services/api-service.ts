@@ -176,6 +176,34 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         }
     });
 
+    /* ---------------- 好友列表 ---------------- */
+
+    get('/friends', async (_req, res) => {
+        try {
+            const friends = (await ctx.actions.call(
+                'get_friend_list',
+                {},
+                ctx.adapterName,
+                ctx.pluginManager.config,
+            )) as unknown as Array<{
+                user_id: number | string;
+                nickname?: string;
+                remark?: string;
+            }>;
+
+            const data = (friends ?? []).map((f) => ({
+                user_id: String(f.user_id),
+                nickname: f.nickname ?? '',
+                remark: f.remark ?? '',
+            }));
+
+            res.json({ code: 0, data });
+        } catch (e) {
+            ctx.logger.error('[群管助手] 获取好友列表失败:', e);
+            fail(res, 500, String(e));
+        }
+    });
+
     /* ---------------- 群配置条目 ---------------- */
 
     get('/profiles', (_req, res) => {

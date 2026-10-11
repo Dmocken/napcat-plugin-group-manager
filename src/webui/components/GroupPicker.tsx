@@ -1,9 +1,9 @@
 import { Check, ChevronDown, Search, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+import { IdentityCard } from '@/components/ui/identity';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tag } from '@/components/ui/tag';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store';
 
@@ -77,14 +77,18 @@ export function GroupPicker({
 
     return (
         <div className="space-y-2.5">
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2">
                 {selected.length === 0 ? (
                     <p className="text-xs text-subtle">{emptyHint}</p>
                 ) : (
                     selected.map((gid) => (
-                        <Tag key={gid} onRemove={() => toggle(gid)}>
-                            {nameOf(gid)} <span className="font-mono-num opacity-60">{gid}</span>
-                        </Tag>
+                        <IdentityCard
+                            key={gid}
+                            kind="group"
+                            id={gid}
+                            name={nameOf(gid)}
+                            onRemove={() => toggle(gid)}
+                        />
                     ))
                 )}
             </div>

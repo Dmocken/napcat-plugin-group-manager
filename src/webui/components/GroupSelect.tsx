@@ -1,26 +1,23 @@
 import { Check, ChevronDown, Search, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { IdentityCard } from '@/components/ui/identity';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tag } from '@/components/ui/tag';
 import type { GroupProfile } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store';
 
-/** 绑定群：下拉多选（选中即绑定，再点取消），支持搜索与手动添加群号 */
+/** 绑定群：下拉多选（选中即绑定，再点取消），支持搜索 */
 export function GroupSelect({ profile }: { profile: GroupProfile }): React.JSX.Element {
     const groups = useStore((s) => s.groups);
     const profiles = useStore((s) => s.profiles);
     const toggleGroup = useStore((s) => s.toggleGroup);
     const removeGroup = useStore((s) => s.removeGroup);
-    const addGroup = useStore((s) => s.addGroup);
     const toast = useStore((s) => s.toast);
 
     const [open, setOpen] = useState(false);
     const [keyword, setKeyword] = useState('');
-    const [manual, setManual] = useState('');
 
     /** 归属判断以本地数据为准（服务端快照在编辑期间是旧的） */
     const owners = useMemo(() => {
@@ -47,13 +44,9 @@ export function GroupSelect({ profile }: { profile: GroupProfile }): React.JSX.E
     const infoOf = (gid: string): { group_name?: string } | null =>
         groups.find((group) => String(group.group_id) === String(gid)) ?? null;
 
-    const submitManual = (): void => {
-        if (addGroup(profile.id, manual.trim())) setManual('');
-    };
-
     return (
         <div className="space-y-3">
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2">
                 {profile.group_ids.length === 0 ? (
                     <p className="text-xs text-subtle">
                         还没有绑定任何群 —— 未绑定任何配置的群，功能都不会生效。
@@ -63,9 +56,13 @@ export function GroupSelect({ profile }: { profile: GroupProfile }): React.JSX.E
                         const info = infoOf(gid);
                         const name = info ? info.group_name || '未命名群' : '未知群';
                         return (
-                            <Tag key={gid} onRemove={() => removeGroup(profile.id, gid)}>
-                                {name} <span className="font-mono-num opacity-60">{gid}</span>
-                            </Tag>
+                            <IdentityCard
+                                key={gid}
+                                kind="group"
+                                id={gid}
+                                name={name}
+                                onRemove={() => removeGroup(profile.id, gid)}
+                            />
                         );
                     })
                 )}
@@ -104,7 +101,7 @@ export function GroupSelect({ profile }: { profile: GroupProfile }): React.JSX.E
                     <div className="mt-2 max-h-[300px] overflow-auto">
                         {filtered.length === 0 ? (
                             <p className="px-1 py-3 text-xs text-subtle">
-                                没有匹配的群；插件需要先收到一次群消息才会拉取群列表，也可以在下方手动填群号。
+                                没有匹配的群；插件需要先收到一次群消息才会拉取群列表。
                             </p>
                         ) : (
                             filtered.map((group) => {
@@ -155,25 +152,6 @@ export function GroupSelect({ profile }: { profile: GroupProfile }): React.JSX.E
                                 );
                             })
                         )}
-                    </div>
-
-                    <div className="mt-2 flex items-center gap-2 border-t border-line pt-2.5">
-                        <span className="shrink-0 text-xs text-subtle">列表里没有？</span>
-                        <Input
-                            className="h-8 w-[160px] font-mono-num"
-                            value={manual}
-                            placeholder="手动填群号"
-                            onChange={(event) => setManual(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    submitManual();
-                                }
-                            }}
-                        />
-                        <Button size="sm" onClick={submitManual}>
-                            添加
-                        </Button>
                     </div>
                 </PopoverContent>
             </Popover>

@@ -1,4 +1,4 @@
-import { Check, Copy, Search, TriangleAlert } from 'lucide-react';
+import { Check, Copy, Search, TriangleAlert, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { ActivityLogPanel } from '@/components/ActivityLogPanel';
@@ -123,7 +123,7 @@ function FeatureMatrix(): React.JSX.Element {
             <EmptyState
                 icon={<Search className="size-6" />}
                 title="还没有拉到群列表"
-                description="插件需要收到一次群消息后才能获取群列表。可在「群配置 → 绑定群」里手动输入群号完成绑定。"
+                description="插件需要收到一次群消息后才能获取群列表，稍后刷新即可。"
             />
         );
     }
@@ -159,7 +159,7 @@ function FeatureMatrix(): React.JSX.Element {
                         <tr className="border-b border-line">
                             <th
                                 scope="col"
-                                className="sticky left-0 z-20 w-[212px] min-w-[212px] bg-surface py-2.5 pr-3 pl-5 text-left text-[11px] font-medium text-subtle"
+                                className="sticky left-0 z-20 w-[240px] min-w-[240px] bg-surface py-2.5 pr-3 pl-5 text-left text-[11px] font-medium text-subtle"
                             >
                                 群 / 配置
                             </th>
@@ -171,7 +171,9 @@ function FeatureMatrix(): React.JSX.Element {
                                         scope="col"
                                         className="bg-surface px-1 py-2.5 text-center font-medium text-subtle"
                                     >
-                                        <Hint content={`${feature.label}\n${feature.usage}`} width={340}>
+                                        {/* portal：浮层挂在 body 上。否则每个列的隐藏浮层（宽 340）
+                                            都会撑大滚动区，导致表格能被向右拖出一片空白 */}
+                                        <Hint content={`${feature.label}\n${feature.usage}`} width={340} portal>
                                             <span className="flex cursor-help flex-col items-center gap-1 px-2 py-0.5 text-[11px]">
                                                 <Icon className="size-4" />
                                                 {featureShort(feature.key, feature.label)}
@@ -193,20 +195,27 @@ function FeatureMatrix(): React.JSX.Element {
                                 >
                                     <th
                                         scope="row"
-                                        className="sticky left-0 z-10 w-[212px] min-w-[212px] bg-surface py-2 pr-3 pl-5 text-left font-normal"
+                                        className="sticky left-0 z-10 w-[240px] min-w-[240px] bg-surface py-2 pr-3 pl-5 text-left font-normal"
                                     >
-                                        <div className="flex items-baseline gap-1.5">
-                                            <span className="truncate text-[13px] text-ink-2">
-                                                {group.group_name || '未命名群'}
+                                        <div className="flex min-w-0 items-center gap-2">
+                                            <span className="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-subtle">
+                                                <Users className="size-3.5" />
                                             </span>
-                                            <span className="shrink-0 text-[11px] text-subtle">
-                                                {owner ? owner.label : '未绑定'}
+                                            <span className="flex min-w-0 flex-col">
+                                                <span className="flex min-w-0 items-baseline gap-1.5">
+                                                    <span className="truncate text-[13px] leading-4 text-ink-2">
+                                                        {group.group_name || '未命名群'}
+                                                    </span>
+                                                    <span className="shrink-0 text-[11px] text-subtle">
+                                                        {owner ? owner.label : '未绑定'}
+                                                    </span>
+                                                </span>
+                                                <span className="flex items-center gap-1.5 font-mono-num text-[11px] leading-4 text-subtle">
+                                                    <span>{gid}</span>
+                                                    <span className="font-sans">·</span>
+                                                    <span>{group.member_count} 人</span>
+                                                </span>
                                             </span>
-                                        </div>
-                                        <div className="mt-0.5 flex items-center gap-1.5 font-mono-num text-[11px] text-subtle">
-                                            <span>{gid}</span>
-                                            <span className="font-sans">·</span>
-                                            <span>{group.member_count} 人</span>
                                         </div>
                                     </th>
                                     {features.map((feature) => {

@@ -11,6 +11,7 @@ import type {
     DupSnapshotInfo,
     ErrorRecord,
     FeatureSettings,
+    FriendInfo,
     GlobalConfig,
     GroupInfo,
     GroupProfile,
@@ -44,6 +45,8 @@ interface StoreState {
     global: GlobalConfig;
     profiles: GroupProfile[];
     groups: GroupInfo[];
+    /** bot 好友列表（用于管理员昵称展示与从好友选择） */
+    friends: FriendInfo[];
     status: StatusInfo | null;
     dirty: boolean;
     /** 首次加载中（用于骨架屏） */
@@ -107,8 +110,6 @@ interface StoreState {
     removeProfile: (profileId: string) => void;
     setProfileLabel: (profileId: string, label: string) => void;
     toggleGroup: (profileId: string, groupId: string) => void;
-    /** @returns 是否真的添加成功（失败时已自动提示） */
-    addGroup: (profileId: string, groupId: string) => boolean;
     removeGroup: (profileId: string, groupId: string) => void;
     reorderFeature: (profileId: string, fromKey: string, toKey: string) => void;
     updateFeature: (
@@ -149,6 +150,7 @@ export const useStore = create<StoreState>()(
         global: {},
         profiles: [],
         groups: [],
+        friends: [],
         status: null,
         dirty: false,
         loading: false,
@@ -188,11 +190,12 @@ export const useStore = create<StoreState>()(
                 draft.loading = true;
             });
             try {
-                const [meta, global, profiles, groups] = await Promise.all([
+                const [meta, global, profiles, groups, friends] = await Promise.all([
                     request<MetaResponse>('/meta'),
                     request<GlobalConfig>('/config'),
                     request<GroupProfile[]>('/profiles'),
                     request<GroupInfo[]>('/groups').catch(() => [] as GroupInfo[]),
+                    request<FriendInfo[]>('/friends').catch(() => [] as FriendInfo[]),
                 ]);
                 void get().refreshErrors();
                 void get().refreshActivities();
@@ -209,6 +212,7 @@ export const useStore = create<StoreState>()(
                         normalizeProfile(p, meta),
                     );
                     draft.groups = Array.isArray(groups) ? groups : [];
+                    draft.friends = Array.isArray(friends) ? friends : [];
                     draft.dirty = false;
                     draft.errorBanner = null;
                     // 默认选中第一条配置，避免详情区空白
@@ -543,32 +547,6 @@ export const useStore = create<StoreState>()(
                 else profile.group_ids.push(groupId);
                 draft.dirty = true;
             });
-        },
-
-        addGroup: (profileId, groupId) => {
-            if (!isQq(groupId)) {
-                get().toast('请输入正确的群号', 'err');
-                return false;
-            }
-            const owner = get().profiles.find(
-                (p) => p.id !== profileId && p.group_ids.includes(groupId),
-            );
-            if (owner) {
-                get().toast(`该群已被「${owner.label}」绑定`);
-                return false;
-            }
-            const profile = get().profiles.find((p) => p.id === profileId);
-            if (profile?.group_ids.includes(groupId)) {
-                get().toast('该群已绑定');
-                return false;
-            }
-            set((draft) => {
-                const target = draft.profiles.find((p) => p.id === profileId);
-                if (!target) return;
-                target.group_ids.push(groupId);
-                draft.dirty = true;
-            });
-            return true;
         },
 
         removeGroup: (profileId, groupId) =>

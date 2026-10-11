@@ -120,6 +120,15 @@ export interface GroupInfo {
     enabledFeatures: string[];
 }
 
+/** GET /friends */
+export interface FriendInfo {
+    user_id: string;
+    /** 好友昵称 */
+    nickname: string;
+    /** 好友备注；展示时优先于昵称 */
+    remark: string;
+}
+
 /** GET /status */
 export interface StatusInfo {
     pluginName: string;
