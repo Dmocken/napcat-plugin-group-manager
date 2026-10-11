@@ -829,14 +829,18 @@ function BanRow({
                 kind="user"
                 id={row.userId}
                 name={userName}
-                className="w-[168px] shrink-0"
+                className="min-w-[168px] flex-1"
             />
-            <span className="w-[112px] shrink-0 text-[12px] text-subtle">
+            {/* 两段时长最长各 7 个字符（如「29天23小时 / 29天23小时」），给足宽度并禁止换行 */}
+            <span className="w-[144px] shrink-0 text-[12px] whitespace-nowrap text-subtle">
                 {durationText(elapsed)}
                 <span className="text-subtle/70"> / {durationText(row.duration)}</span>
             </span>
             <span
-                className={cn('w-[80px] shrink-0 text-[12px]', expired ? 'text-subtle' : 'text-ink-2')}
+                className={cn(
+                    'w-[80px] shrink-0 text-[12px] whitespace-nowrap',
+                    expired ? 'text-subtle' : 'text-ink-2',
+                )}
                 title={expired ? '这条记录已过期，刷新后会被清掉' : undefined}
             >
                 {expired ? '已过期' : durationText(remaining)}
@@ -851,7 +855,9 @@ function BanRow({
                 <LeftBadge left={row.left} remute={row.remute} />
             </span>
 
-            <div className="ml-auto flex shrink-0 items-center gap-2">
+            {/* 固定宽度（3 个按钮总宽）+ 右对齐：与表头「操作」列同宽；
+                富余空间交给上面的「用户」列，行尾不再留一大段空白 */}
+            <div className="flex w-[172px] shrink-0 items-center justify-end gap-2">
                 {/* 不参与重禁的记录（sm / smplus）改时长没有意义，直接不给入口 */}
                 {row.remute === false ? null : (
                     <Button size="xs" variant="ghost" onClick={onEditDuration}>
@@ -982,13 +988,17 @@ function BanRecordsPanel(): React.JSX.Element {
                             />
 
                             <div className="flex items-center gap-3 border-b border-line bg-surface/80 px-4 py-1.5 text-[11px] text-subtle">
-                                <span className="w-[168px] shrink-0">用户</span>
-                                <span className="w-[112px] shrink-0">已禁言 / 总时长</span>
-                                <span className="w-[80px] shrink-0">剩余</span>
+                                <span className="min-w-[168px] flex-1">用户</span>
+                                <span className="w-[144px] shrink-0 whitespace-nowrap">
+                                    已禁言 / 总时长
+                                </span>
+                                <span className="w-[80px] shrink-0 whitespace-nowrap">剩余</span>
                                 <span className="w-[100px] shrink-0">禁言时间</span>
                                 <span className="w-[100px] shrink-0">解禁时间</span>
-                                <span className="w-[72px] shrink-0">是否退群</span>
-                                <span className="ml-auto shrink-0">操作</span>
+                                <span className="w-[72px] shrink-0 whitespace-nowrap">是否退群</span>
+                                {/* 「操作」列宽必须和行里那三个按钮的总宽一致：用户列是自适应的，
+                                    表头与行的固定列宽只要差一点，两边算出来的列宽就会错位 */}
+                                <span className="w-[172px] shrink-0 text-right">操作</span>
                             </div>
 
                             <div className="max-h-[540px] overflow-auto">

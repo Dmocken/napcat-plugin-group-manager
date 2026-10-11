@@ -8,11 +8,12 @@ import {
     TriangleAlert,
     Users,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { IdentityAvatar, IdentityCard } from '@/components/ui/identity';
+import { ConfirmDialogShell } from '@/components/ui/dialog';
+import { IdentityAvatar, IdentityCard, IdentityCell } from '@/components/ui/identity';
 import { Input } from '@/components/ui/input';
 import { RowField } from '@/components/ui/label';
 import { Panel, PanelHeader, SectionTitle } from '@/components/ui/panel';
@@ -40,12 +41,6 @@ function secondsText(seconds: number): string {
     return `${Math.round(seconds / 60)} 分钟`;
 }
 
-/** 预览 / 二次确认用的单行摘要：超长截断，避免弹窗被正文撑爆 */
-function clip(text: string, max = 160): string {
-    const one = text.replace(/\s+/g, ' ').trim();
-    return one.length > max ? `${one.slice(0, max)}…` : one;
-}
-
 export function BroadcastPage(): React.JSX.Element {
     const groups = useStore((s) => s.groups);
     const profiles = useStore((s) => s.profiles);
@@ -54,8 +49,10 @@ export function BroadcastPage(): React.JSX.Element {
     const sendBroadcast = useStore((s) => s.sendBroadcast);
     const broadcasting = useStore((s) => s.broadcasting);
     const result = useStore((s) => s.broadcastResult);
-    const askConfirm = useStore((s) => s.askConfirm);
     const toast = useStore((s) => s.toast);
+
+    /** 二次确认弹窗（要列群和正文，全局那个只吃字符串，所以页面自己渲染一个） */
+    const [confirmOpen, setConfirmOpen] = useState(false);
 
     const { groups: selected, keyword, content, atAll, gapMin, gapMax } = draft;
 
@@ -106,7 +103,8 @@ export function BroadcastPage(): React.JSX.Element {
         patchBroadcast({ groups: next });
     };
 
-    const submit = async (): Promise<void> => {
+    /** 点「发送」：先校验，再弹确认框（内容都在弹窗里，确认后才真的发） */
+    const submit = (): void => {
         if (broadcasting) return;
         if (!count) {
             toast('请先勾选要发送的群', 'err');
@@ -116,15 +114,12 @@ export function BroadcastPage(): React.JSX.Element {
             toast('正文不能为空', 'err');
             return;
         }
+        setConfirmOpen(true);
+    };
 
-        const ok = await askConfirm(
-            '确认发送',
-            `将向 ${count} 个群发送：\n${clip(preview)}\n\n` +
-                `群间随机间隔 ${lo} ~ ${hi} 秒，预计耗时约 ${secondsText(estimate)}。\n` +
-                '消息发出后无法撤回，请确认内容无误。',
-        );
-        if (!ok) return;
-
+    const sendNow = async (): Promise<void> => {
+        // 先关弹窗：整轮可能跑几分钟，进度看页面上那个按钮的转圈
+        setConfirmOpen(false);
         const data = await sendBroadcast({
             groups: selected,
             text: body,
@@ -401,6 +396,45 @@ export function BroadcastPage(): React.JSX.Element {
                     ) : null}
                 </div>
             </Panel>
+
+            <ConfirmDialogShell
+                open={confirmOpen}
+                onOpenChange={setConfirmOpen}
+                title="确认发送"
+                description={
+                    `群间随机间隔 ${lo} ~ ${hi} 秒，预计耗时约 ${secondsText(estimate)}。\n` +
+                    '消息发出后无法撤回，请确认群与内容无误。'
+                }
+                confirmText={`发送到 ${count} 个群`}
+                onConfirm={() => void sendNow()}
+            >
+                <div className="max-h-[320px] space-y-3 overflow-y-auto">
+                    <div className="rounded-panel border border-line bg-surface-2 p-3">
+                        <div className="text-[11px] text-subtle">消息内容</div>
+                        <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-wrap text-ink-2">
+                            {preview}
+                        </p>
+                    </div>
+
+                    <div className="overflow-hidden rounded-panel border border-line">
+                        <div className="border-b border-line bg-surface-2 px-3 py-1.5 text-[11px] text-subtle">
+                            将发送到 {count} 个群
+                        </div>
+                        <div className="max-h-[200px] divide-y divide-line overflow-y-auto">
+                            {selected.map((gid) => (
+                                <div key={gid} className="flex items-center gap-2 px-3 py-2">
+                                    <IdentityCell
+                                        kind="group"
+                                        id={gid}
+                                        name={nameOf(gid)}
+                                        className="min-w-0 flex-1"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </ConfirmDialogShell>
         </div>
     );
 }
