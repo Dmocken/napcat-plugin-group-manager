@@ -7,6 +7,8 @@ import { featureOrder, newProfile, normalizeProfile } from '@/lib/profile';
 import { isQq } from '@/lib/utils';
 import type {
     ActivityRecord,
+    BanRecordRow,
+    BlackRecordRow,
     DupExportResult,
     DupSnapshotInfo,
     ErrorRecord,
@@ -16,13 +18,14 @@ import type {
     GroupInfo,
     GroupProfile,
     MetaResponse,
+    RecallRow,
     StatusInfo,
     ToastItem,
     ToastKind,
 } from '@/lib/types';
 
 /** 左侧导航的页面 */
-export type PageKey = 'overview' | 'global' | 'profiles';
+export type PageKey = 'overview' | 'global' | 'profiles' | 'data';
 
 /** 可导出 / 清空的日志文件 */
 export type LogTarget = 'errors' | 'activity';
@@ -67,6 +70,16 @@ interface StoreState {
     /** 群成员快照信息（重复加群检测用） */
     dupSnapshot: DupSnapshotInfo | null;
 
+    /* ---------------- 群数据（「群数据」页） ---------------- */
+    /** 禁言记录：退群重进「重新禁言」保留的时长 */
+    banRecords: BanRecordRow[];
+    /** 黑历史 */
+    blackHistory: BlackRecordRow[];
+    /** 撤回记录 */
+    recallRecords: RecallRow[];
+    /** 群数据加载中 */
+    groupDataLoading: boolean;
+
     page: PageKey;
     setPage: (page: PageKey) => void;
 
@@ -105,6 +118,36 @@ interface StoreState {
     importDupSnapshot: (content: string) => Promise<void>;
     /** 清理快照文件 */
     clearDupSnapshot: () => Promise<boolean>;
+
+    /* ---------------- 群数据 ---------------- */
+
+    /** 拉取禁言记录 / 黑历史 / 撤回记录 */
+    loadGroupData: () => Promise<void>;
+    /** 修改禁言保留时长（秒）；失败时已自动提示 */
+    updateBanDuration: (groupId: string, userId: string, duration: number) => Promise<void>;
+    /** 删除单条禁言记录 */
+    removeBanRecordRow: (groupId: string, userId: string) => Promise<void>;
+    /** 清空禁言记录：传群号只清该群，不传全清 */
+    clearBanRecordRows: (groupId?: string) => Promise<void>;
+    /** 把一条禁言记录迁移到另一个群 */
+    migrateBanRecord: (groupId: string, userId: string, targetGroupId: string) => Promise<void>;
+    /** 把某人的撤回记录迁移到另一个群 */
+    migrateRecallRow: (groupId: string, userId: string, targetGroupId: string) => Promise<void>;
+    /** 新增黑历史（groupId 为空表示不指定群） */
+    addBlackRecord: (userId: string, text: string, groupId?: string) => Promise<void>;
+    /** 修改黑历史（QQ 号 / 正文 / 所属群） */
+    updateBlackRecord: (
+        id: number,
+        patch: { userId?: string; text?: string; groupId?: string },
+    ) => Promise<void>;
+    /** 按编号删除黑历史 */
+    removeBlackRecords: (ids: number[]) => Promise<void>;
+    /** 清空黑历史 */
+    clearBlackHistory: () => Promise<void>;
+    /** 删除某群某人的撤回记录 */
+    removeRecallRow: (groupId: string, userId: string) => Promise<void>;
+    /** 清空撤回记录：传群号只清该群，不传全清 */
+    clearRecallRows: (groupId?: string) => Promise<void>;
 
     addProfile: () => void;
     removeProfile: (profileId: string) => void;
@@ -162,6 +205,10 @@ export const useStore = create<StoreState>()(
         activities: [],
         activitiesBootAt: null,
         dupSnapshot: null,
+        banRecords: [],
+        blackHistory: [],
+        recallRecords: [],
+        groupDataLoading: false,
 
         page: 'overview',
         activeProfileId: null,
@@ -495,6 +542,203 @@ export const useStore = create<StoreState>()(
             } catch (error) {
                 get().handleError(error, '清理失败：');
                 return false;
+            }
+        },
+
+        /* ---------------- 群数据 ---------------- */
+
+        loadGroupData: async () => {
+            set((draft) => {
+                draft.groupDataLoading = true;
+            });
+            try {
+                const [ban, black, recall] = await Promise.all([
+                    request<{ records: BanRecordRow[] }>('/data/ban-records').catch(() => ({
+                        records: [] as BanRecordRow[],
+                    })),
+                    request<{ records: BlackRecordRow[] }>('/data/black-history').catch(() => ({
+                        records: [] as BlackRecordRow[],
+                    })),
+                    request<{ records: RecallRow[] }>('/data/recall-records').catch(() => ({
+                        records: [] as RecallRow[],
+                    })),
+                ]);
+                set((draft) => {
+                    draft.banRecords = ban?.records ?? [];
+                    draft.blackHistory = black?.records ?? [];
+                    draft.recallRecords = recall?.records ?? [];
+                });
+            } catch (error) {
+                get().handleError(error, '读取群数据失败：');
+            } finally {
+                set((draft) => {
+                    draft.groupDataLoading = false;
+                });
+            }
+        },
+
+        migrateBanRecord: async (groupId, userId, targetGroupId) => {
+            try {
+                const data = await request<{ records: BanRecordRow[] }>('/data/ban-records/migrate', {
+                    method: 'POST',
+                    body: { groupId, userId, targetGroupId },
+                });
+                set((draft) => {
+                    draft.banRecords = data?.records ?? [];
+                });
+                get().toast(`已迁移到群 ${targetGroupId}`);
+            } catch (error) {
+                get().handleError(error, '迁移失败：');
+            }
+        },
+
+        migrateRecallRow: async (groupId, userId, targetGroupId) => {
+            try {
+                const data = await request<{ records: RecallRow[] }>(
+                    '/data/recall-records/migrate',
+                    { method: 'POST', body: { groupId, userId, targetGroupId } },
+                );
+                set((draft) => {
+                    draft.recallRecords = data?.records ?? [];
+                });
+                get().toast(`已迁移到群 ${targetGroupId}`);
+            } catch (error) {
+                get().handleError(error, '迁移失败：');
+            }
+        },
+
+        updateBanDuration: async (groupId, userId, duration) => {
+            try {
+                const data = await request<{ records: BanRecordRow[] }>('/data/ban-records/update', {
+                    method: 'POST',
+                    body: { groupId, userId, duration },
+                });
+                set((draft) => {
+                    draft.banRecords = data?.records ?? [];
+                });
+                get().toast('已更新保留时长');
+            } catch (error) {
+                get().handleError(error, '更新失败：');
+            }
+        },
+
+        removeBanRecordRow: async (groupId, userId) => {
+            try {
+                const data = await request<{ records: BanRecordRow[] }>('/data/ban-records/remove', {
+                    method: 'POST',
+                    body: { groupId, userId },
+                });
+                set((draft) => {
+                    draft.banRecords = data?.records ?? [];
+                });
+                get().toast('已删除该条禁言记录');
+            } catch (error) {
+                get().handleError(error, '删除失败：');
+            }
+        },
+
+        clearBanRecordRows: async (groupId) => {
+            try {
+                const data = await request<{ records: BanRecordRow[]; removed: number }>(
+                    '/data/ban-records/clear',
+                    { method: 'POST', body: groupId ? { groupId } : {} },
+                );
+                set((draft) => {
+                    draft.banRecords = data?.records ?? [];
+                });
+                get().toast(`已清空 ${data?.removed ?? 0} 条禁言记录`);
+            } catch (error) {
+                get().handleError(error, '清空失败：');
+            }
+        },
+
+        addBlackRecord: async (userId, text, groupId) => {
+            try {
+                const data = await request<{ records: BlackRecordRow[]; id: number }>(
+                    '/data/black-history/add',
+                    { method: 'POST', body: { userId, text, groupId } },
+                );
+                set((draft) => {
+                    draft.blackHistory = data?.records ?? [];
+                });
+                get().toast(`已新增黑历史 #${data?.id ?? ''}`);
+            } catch (error) {
+                get().handleError(error, '新增失败：');
+            }
+        },
+
+        updateBlackRecord: async (id, patch) => {
+            try {
+                const data = await request<{ records: BlackRecordRow[] }>(
+                    '/data/black-history/update',
+                    { method: 'POST', body: { id, ...patch } },
+                );
+                set((draft) => {
+                    draft.blackHistory = data?.records ?? [];
+                });
+                get().toast('已保存修改');
+            } catch (error) {
+                get().handleError(error, '保存失败：');
+            }
+        },
+
+        removeBlackRecords: async (ids) => {
+            try {
+                const data = await request<{ records: BlackRecordRow[]; removed: number }>(
+                    '/data/black-history/remove',
+                    { method: 'POST', body: { ids } },
+                );
+                set((draft) => {
+                    draft.blackHistory = data?.records ?? [];
+                });
+                get().toast(`已删除 ${data?.removed ?? 0} 条黑历史`);
+            } catch (error) {
+                get().handleError(error, '删除失败：');
+            }
+        },
+
+        clearBlackHistory: async () => {
+            try {
+                const data = await request<{ records: BlackRecordRow[]; removed: number }>(
+                    '/data/black-history/clear',
+                    { method: 'POST' },
+                );
+                set((draft) => {
+                    draft.blackHistory = data?.records ?? [];
+                });
+                get().toast(`已清空 ${data?.removed ?? 0} 条黑历史`);
+            } catch (error) {
+                get().handleError(error, '清空失败：');
+            }
+        },
+
+        removeRecallRow: async (groupId, userId) => {
+            try {
+                const data = await request<{ records: RecallRow[] }>('/data/recall-records/remove', {
+                    method: 'POST',
+                    body: { groupId, userId },
+                });
+                set((draft) => {
+                    draft.recallRecords = data?.records ?? [];
+                });
+                get().toast('已删除该成员的撤回记录');
+            } catch (error) {
+                get().handleError(error, '删除失败：');
+            }
+        },
+
+        clearRecallRows: async (groupId) => {
+            try {
+                const data = await request<{ records: RecallRow[]; removed: number }>(
+                    '/data/recall-records/clear',
+                    { method: 'POST', body: groupId ? { groupId } : {} },
+                );
+                set((draft) => {
+                    draft.recallRecords = data?.records ?? [];
+                });
+                get().toast(`已清空 ${data?.removed ?? 0} 条撤回记录`);
+            } catch (error) {
+                get().handleError(error, '清空失败：');
             }
         },
 

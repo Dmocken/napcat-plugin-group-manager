@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PasswordDialog } from '@/components/PasswordDialog';
 import { Toaster } from '@/components/Toaster';
 import { GlobalSettingsPage } from '@/pages/GlobalSettingsPage';
+import { GroupDataPage } from '@/pages/GroupDataPage';
 import { OverviewPage } from '@/pages/OverviewPage';
 import { ProfilesPage } from '@/pages/ProfilesPage';
 import { useStore } from '@/store';
@@ -99,6 +100,8 @@ export function App(): React.JSX.Element {
                             <OverviewPage />
                         ) : page === 'global' ? (
                             <GlobalSettingsPage />
+                        ) : page === 'data' ? (
+                            <GroupDataPage />
                         ) : (
                             <ProfilesPage />
                         )}

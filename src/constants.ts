@@ -288,7 +288,18 @@ export const FEATURES: FeatureMeta[] = [
         usage: 'ban @用户 时长 单位（秒/分/时/天）\nkick @用户\nunban @用户\n撤回（引用要撤回的消息）',
         block: false,
         implemented: true,
-        params: [...(FEATURE_TEXT_PARAMS.ban ?? [])],
+        params: [
+            {
+                key: 'remute_on_rejoin',
+                label: '退群重进重新禁言',
+                type: 'boolean',
+                default: true,
+                hint:
+                    '开启后：退群前仍处于禁言状态的成员重新入群时，按原剩余时长再次禁言。' +
+                    '禁言记录对任何群都会记录，但要真正重新禁言还需要该群同时开启「新人禁言」。',
+            },
+            ...(FEATURE_TEXT_PARAMS.ban ?? []),
+        ],
     },
     {
         key: 'random_ban',

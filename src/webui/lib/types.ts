@@ -129,6 +129,51 @@ export interface FriendInfo {
     remark: string;
 }
 
+/* ---------------- 群数据（GET /data/*） ---------------- */
+
+/** 禁言记录：退群重进「重新禁言」保留的时长 */
+export interface BanRecordRow {
+    groupId: string;
+    userId: string;
+    /** 保留的禁言时长（秒） */
+    duration: number;
+    /** 禁言开始时间戳（秒） */
+    banTime: number;
+    /** 剩余保留时长（秒） */
+    remaining: number;
+    /** 是否已退群；undefined = 无法判断（老数据 / 没收到退群通知） */
+    left?: boolean;
+}
+
+/** 黑历史列表项（正文已拼成纯文本） */
+export interface BlackRecordRow {
+    id: number;
+    userId: number;
+    /** 所属群号；空字符串 = 老数据没有记录群 */
+    groupId: string;
+    text: string;
+}
+
+
+
+/** 一条撤回明细 */
+export interface RecallEntryRow {
+    operatorId: number;
+    operatorName: string;
+    message: string;
+    timestamp: number;
+}
+
+/** 撤回记录列表项：一条 = 某群某个被撤回消息的人 */
+export interface RecallRow {
+    groupId: string;
+    userId: string;
+    count: number;
+    /** 最近一次被撤回的时间戳（秒） */
+    lastAt: number;
+    records: RecallEntryRow[];
+}
+
 /** GET /status */
 export interface StatusInfo {
     pluginName: string;

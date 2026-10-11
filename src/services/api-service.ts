@@ -23,6 +23,22 @@ import {
     snapshotInfo,
 } from './dup-check';
 import { clearActivityLog, recentActivities } from '../core/activity';
+import {
+    addBlackRecord,
+    clearBanRecords,
+    clearBlackHistory,
+    clearRecallRecords,
+    listBanRecords,
+    listBlackRecordRows,
+    listRecallRows,
+    migrateBanRecord,
+    migrateRecallUser,
+    removeBanRow,
+    removeBlackRecords,
+    removeRecallUser,
+    updateBanDuration,
+    updateBlackRecord,
+} from '../core/group-data';
 import { clearErrorLog, getGlobal, getProfiles, recentErrors, startedAt, stats, updateGlobal, uptimeSeconds, uptimeText } from '../core/state';
 import { getDataDir, listDataFiles, readLogFile } from '../core/store';
 
@@ -265,6 +281,136 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
 
     get('/data/files', (_req, res) => {
         res.json({ code: 0, data: { dataPath: getDataDir(), files: listDataFiles() } });
+    });
+
+    /* ---------------- 群数据：禁言记录 ---------------- */
+
+    get('/data/ban-records', (_req, res) => {
+        res.json({ code: 0, data: { records: listBanRecords() } });
+    });
+
+    post('/data/ban-records/update', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const result = updateBanDuration(
+            String(body.groupId ?? ''),
+            String(body.userId ?? ''),
+            Number(body.duration),
+        );
+        if (!result.ok) return fail(res, 400, result.message);
+        res.json({ code: 0, data: { records: listBanRecords() } });
+    });
+
+    post('/data/ban-records/remove', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        if (!removeBanRow(String(body.groupId ?? ''), String(body.userId ?? ''))) {
+            return fail(res, 404, '这条禁言记录已经不存在了');
+        }
+        res.json({ code: 0, data: { records: listBanRecords() } });
+    });
+
+    post('/data/ban-records/clear', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const groupId = typeof body.groupId === 'string' && body.groupId ? body.groupId : undefined;
+        const removed = clearBanRecords(groupId);
+        res.json({ code: 0, data: { records: listBanRecords(), removed } });
+    });
+
+    /* ---------------- 群数据：黑历史 ---------------- */
+
+    get('/data/black-history', (_req, res) => {
+        res.json({ code: 0, data: { records: listBlackRecordRows() } });
+    });
+
+    post('/data/black-history/add', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const userId = String(body.userId ?? '').trim();
+        const text = typeof body.text === 'string' ? body.text.trim() : '';
+        if (!/^\d{5,12}$/.test(userId)) return fail(res, 400, 'QQ 号格式不正确');
+        if (!text) return fail(res, 400, '正文不能为空');
+
+        const id = addBlackRecord(userId, text, String(body.groupId ?? ''));
+        res.json({ code: 0, data: { records: listBlackRecordRows(), id } });
+    });
+
+    post('/data/black-history/update', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const id = Number(body.id);
+        if (!Number.isFinite(id)) return fail(res, 400, '缺少要修改的编号');
+
+        const userId = body.userId === undefined ? undefined : String(body.userId).trim();
+        const text = typeof body.text === 'string' ? body.text.trim() : undefined;
+        const groupId = body.groupId === undefined ? undefined : String(body.groupId);
+        if (userId !== undefined && !/^\d{5,12}$/.test(userId)) {
+            return fail(res, 400, 'QQ 号格式不正确');
+        }
+        if (text !== undefined && !text) return fail(res, 400, '正文不能为空');
+
+        if (!updateBlackRecord(id, { userId, text, groupId })) {
+            return fail(res, 404, `没有找到编号为 ${id} 的黑历史`);
+        }
+        res.json({ code: 0, data: { records: listBlackRecordRows() } });
+    });
+
+    post('/data/black-history/remove', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const raw = body.ids;
+        const ids = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
+        const removed = removeBlackRecords(ids as Array<number | string>);
+        res.json({ code: 0, data: { records: listBlackRecordRows(), removed } });
+    });
+
+    post('/data/black-history/clear', (_req, res) => {
+        const removed = clearBlackHistory();
+        res.json({ code: 0, data: { records: listBlackRecordRows(), removed } });
+    });
+
+    post('/data/ban-records/migrate', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const targetGroupId = String(body.targetGroupId ?? '').trim();
+        if (!/^\d{5,12}$/.test(targetGroupId)) return fail(res, 400, '目标群号格式不正确');
+
+        const result = migrateBanRecord(
+            String(body.groupId ?? ''),
+            String(body.userId ?? ''),
+            targetGroupId,
+        );
+        if (!result.ok) return fail(res, 400, result.message);
+        res.json({ code: 0, data: { records: listBanRecords() } });
+    });
+
+    /* ---------------- 群数据：撤回记录 ---------------- */
+
+    get('/data/recall-records', (_req, res) => {
+        res.json({ code: 0, data: { records: listRecallRows() } });
+    });
+
+    post('/data/recall-records/migrate', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const targetGroupId = String(body.targetGroupId ?? '').trim();
+        if (!/^\d{5,12}$/.test(targetGroupId)) return fail(res, 400, '目标群号格式不正确');
+
+        const result = migrateRecallUser(
+            String(body.groupId ?? ''),
+            String(body.userId ?? ''),
+            targetGroupId,
+        );
+        if (!result.ok) return fail(res, 400, result.message);
+        res.json({ code: 0, data: { records: listRecallRows() } });
+    });
+
+    post('/data/recall-records/remove', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        if (!removeRecallUser(String(body.groupId ?? ''), String(body.userId ?? ''))) {
+            return fail(res, 404, '这条撤回记录已经不存在了');
+        }
+        res.json({ code: 0, data: { records: listRecallRows() } });
+    });
+
+    post('/data/recall-records/clear', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const groupId = typeof body.groupId === 'string' && body.groupId ? body.groupId : undefined;
+        const removed = clearRecallRecords(groupId);
+        res.json({ code: 0, data: { records: listRecallRows(), removed } });
     });
 
     /* ---------------- 错误记录 ---------------- */

@@ -42,7 +42,10 @@ export function PanelHeader({
                 className,
             )}
         >
-            {icon ? <span className="mt-0.5 shrink-0 text-muted">{icon}</span> : null}
+            {/* 图标与标题行（leading-6）等高并垂直居中，避免比标题偏上 */}
+            {icon ? (
+                <span className="flex h-6 shrink-0 items-center text-muted">{icon}</span>
+            ) : null}
             <div className="min-w-0 flex-1">
                 <h2 className="text-[15px] leading-6 font-semibold text-ink">{title}</h2>
                 {description ? (

@@ -7,15 +7,15 @@
  */
 
 import { DEFAULT_NEWBAN_REMUTE, DEFAULT_NEWBAN_WELCOME } from '../constants';
-import { getPendingBan, removeBanRecord } from '../core/ban-records';
+import { findPendingBan, removeBanRecord } from '../core/ban-records';
 import { registerNotice } from '../core/events';
 import { at, callAction, renderTemplate, sendGroup } from '../core/messages';
 import { canToggle } from '../core/permission';
-import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
+import { findProfileByGroup, getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logDebug, logError, logWarn } from '../core/state';
 import { paramText } from '../core/texts';
-import { formatDuration, paramNumber, paramString } from '../core/utils';
+import { formatDuration, paramBool, paramNumber, paramString } from '../core/utils';
 
 registerNotice('group_increase', 'newban', async (ctx) => {
     const { groupId, userId } = ctx;
@@ -26,8 +26,18 @@ registerNotice('group_increase', 'newban', async (ctx) => {
     const welcomeText = paramString(params, 'welcome_text', DEFAULT_NEWBAN_WELCOME);
     const remuteText = paramString(params, 'remute_text', DEFAULT_NEWBAN_REMUTE);
 
-    // 退群重进（有未过期禁言记录）→ 按原时长重禁；否则按新人时长禁言
-    const pending = getPendingBan(groupId, userId);
+    // 「退群重进重新禁言」开关在「手动禁言 / 踢人 / 解禁 / 撤回」功能里，按群生效
+    const remuteEnabled = paramBool(
+        getFeatureSettings(groupId, 'ban').params,
+        'remute_on_rejoin',
+        true,
+    );
+
+    // 退群重进（有未过期禁言记录且开关打开）→ 按原时长重禁；否则按新人时长禁言。
+    // 查找范围 = 该群所属配置组下的所有群：配置组内互通，换群不能逃避禁言。
+    const scope = findProfileByGroup(groupId)?.group_ids ?? [String(groupId)];
+    const hit = remuteEnabled ? findPendingBan(groupId, scope, userId) : null;
+    const pending = hit?.record ?? null;
     const remute = pending !== null;
     const duration = remute ? Math.max(0, Math.floor(Number(pending?.duration) || 0)) : banDuration;
     const timeStr = formatDuration(duration);
@@ -66,7 +76,8 @@ registerNotice('group_increase', 'newban', async (ctx) => {
         logError(`[群管助手] 入群文案发送失败 group=${groupId} user=${userId}:`, e);
     }
 
-    if (remute) removeBanRecord(groupId, userId);
+    // 命中哪条就消费哪条（可能是同配置组里的另一个群留下的记录）
+    if (hit) removeBanRecord(hit.groupId, userId);
 });
 
 registerCommand({

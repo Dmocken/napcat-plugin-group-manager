@@ -2,13 +2,14 @@
  * 手动禁言 / 踢人 / 解禁 / 撤回（对应 nonebot/ban.py）
  *
  * 命令：ban @用户 时长 单位（秒/分/时/天）、kick @用户、unban @用户、撤回（引用）
- * 事件：group_ban（写入/清除禁言记录 + 禁言成功回执）、group_decrease（踢人保护）
+ * 事件：group_ban（写入/清除禁言记录 + 禁言成功回执）、
+ *       group_decrease（退群标记 + 踢人回执 + 踢人保护）
  *
  * 所有提示文案都可以在 WebUI 的「手动禁言 / 踢人 / 解禁 / 撤回 → 提示文案」里改。
  */
 
 import { currentActivity, withActivity, type ActivityHandle } from '../core/activity';
-import { addBanRecord, cleanExpiredBanRecords, removeBanRecord } from '../core/ban-records';
+import { addBanRecord, cleanExpiredBanRecords, removeBanRecord, setBanRecordLeft } from '../core/ban-records';
 import { registerNotice } from '../core/events';
 import { callAction, replyIdOf, sendGroup } from '../core/messages';
 import { isGlobalAdmin } from '../core/permission';
@@ -254,6 +255,19 @@ registerNotice('group_ban', null, async (ctx) => {
         );
         await withActivity(pending.activity, () => sendGroup(ctx.groupId, text));
         pending.activity?.settle('ok');
+    }
+});
+
+/**
+ * 退群标记：退群 / 被踢时给禁言记录打上 `left = true`。
+ *
+ * 「退群重进重新禁言」据此判断这个人是不是真的走了（也决定 WebUI 里「是否退群」那一列），
+ * 因此任何群都要记录，不受功能开关限制。
+ */
+registerNotice('group_decrease', null, async (ctx) => {
+    if (!ctx.groupId || !ctx.userId) return;
+    if (setBanRecordLeft(ctx.groupId, ctx.userId, true)) {
+        logDebug(`[群管助手] 标记退群 group=${ctx.groupId} user=${ctx.userId}`);
     }
 });
 

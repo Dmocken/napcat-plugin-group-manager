@@ -90,6 +90,20 @@ export function paramSelect(
     return s && allowed.includes(s) ? s : def;
 }
 
+/** 从 settings.params 取布尔值（兼容布尔 / 0|1 / 'true'|'false'） */
+export function paramBool(params: Record<string, unknown>, key: string, def: boolean): boolean {
+    const v = params?.[key];
+    if (v === undefined || v === null) return def;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    if (typeof v === 'string') {
+        const s = v.trim().toLowerCase();
+        if (s === 'true' || s === '1') return true;
+        if (s === 'false' || s === '0') return false;
+    }
+    return def;
+}
+
 /** 从 settings.params 取数字数组 */
 export function paramNumberList(params: Record<string, unknown>, key: string, def: number[]): number[] {
     const v = params?.[key];

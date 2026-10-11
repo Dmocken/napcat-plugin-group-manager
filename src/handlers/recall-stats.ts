@@ -8,41 +8,17 @@
 
 import type { MessageSegmentLike, RawEventLike } from '../types';
 import { registerNotice } from '../core/events';
+import { loadRecallRecords, saveRecallRecords, type RecallData, type RecallUserData } from '../core/group-data';
 import { at, callAction, MESSAGES, sendForward, sendGroup, sendPrivate, text } from '../core/messages';
 import { canToggle, isGlobalAdmin } from '../core/permission';
 import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logDebug, logError } from '../core/state';
-import { readJson, writeJson } from '../core/store';
 import { paramText } from '../core/texts';
 import { paramNumberList, paramString } from '../core/utils';
 
-const DATA_FILE = 'recall_records.json';
 const FORWARD_NICKNAME = '群管理助手';
 const DEFAULT_WARNING = '您已被撤回消息 {count} 次，请注意言行，遵守群规！';
-
-interface RecallEntry {
-    operator_id: number;
-    operator_name: string;
-    message: string;
-    timestamp: number;
-}
-
-interface RecallUserData {
-    count: number;
-    records: RecallEntry[];
-}
-
-type RecallData = Record<string, Record<string, RecallUserData>>;
-
-function loadRecords(): RecallData {
-    const data = readJson<RecallData>(DATA_FILE, {});
-    return data && typeof data === 'object' ? data : {};
-}
-
-function saveRecords(data: RecallData): void {
-    writeJson(DATA_FILE, data);
-}
 
 function getUserRecords(data: RecallData, groupId: number | string, userId: number | string): RecallUserData | undefined {
     return data[String(groupId)]?.[String(userId)];
@@ -117,7 +93,7 @@ registerNotice('group_recall', 'recall_stats', async (ctx) => {
         fetchMemberName(groupId, targetId),
     ]);
 
-    const data = loadRecords();
+    const data = loadRecallRecords();
     const groupKey = String(groupId);
     const targetKey = String(targetId);
     if (!data[groupKey]) data[groupKey] = {};
@@ -130,7 +106,7 @@ registerNotice('group_recall', 'recall_stats', async (ctx) => {
         timestamp: Math.floor(Date.now() / 1000),
     });
     data[groupKey][targetKey].count = data[groupKey][targetKey].records.length;
-    saveRecords(data);
+    saveRecallRecords(data);
 
     const params = getFeatureSettings(groupId, 'recall_stats').params;
     const thresholds = paramNumberList(params, 'thresholds', [3, 5]);
@@ -278,7 +254,7 @@ registerCommand({
             return;
         }
 
-        const data = loadRecords();
+        const data = loadRecallRecords();
         const userData = getUserRecords(data, groupId, targetId);
         if (!userData || !userData.count) {
             await sendPrivate(

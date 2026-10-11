@@ -7,34 +7,12 @@
  * 提示文案可在 WebUI 的「黑历史 → 提示文案」里改。
  */
 
+import { loadBlackHistory, nextBlackId, saveBlackHistory, type BlackContent, type BlackRecord } from '../core/group-data';
 import { callAction, replyIdOf, segmentsOf, sendGroup } from '../core/messages';
 import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logError, logDebug } from '../core/state';
-import { readJson, writeJson } from '../core/store';
 import { paramText } from '../core/texts';
-
-const DATA_FILE = 'black_history.json';
-
-interface BlackContent {
-    type: string;
-    data: string;
-}
-
-interface BlackRecord {
-    id: number;
-    user_id: number;
-    content: BlackContent[];
-}
-
-function loadHistory(): BlackRecord[] {
-    const data = readJson<BlackRecord[]>(DATA_FILE, []);
-    return Array.isArray(data) ? data : [];
-}
-
-function saveHistory(data: BlackRecord[]): void {
-    writeJson(DATA_FILE, data);
-}
 
 registerCommand({
     name: '入典',
@@ -86,10 +64,11 @@ registerCommand({
             return;
         }
 
-        const history = loadHistory();
-        const newId = history.reduce((max, r) => Math.max(max, Number(r.id) || 0), 0) + 1;
-        history.push({ id: newId, user_id: targetId, content });
-        saveHistory(history);
+        const history = loadBlackHistory();
+        const newId = nextBlackId(history);
+        // 记下是在哪个群入的典，WebUI 的「群数据 → 黑历史」按群分类要用
+        history.push({ id: newId, user_id: targetId, group_id: c.groupId, content });
+        saveBlackHistory(history);
 
         logDebug(`[群管助手] 新增黑历史 #${newId}`);
         await sendGroup(c.groupId, paramText(params, 'black_added', '我记住这b的黑历史啦！编号为：{id}', { id: newId }));
@@ -102,7 +81,7 @@ registerCommand({
     description: '查看黑历史 [编号 / @某人] — 随机查看一条，带编号或 @ 时精确查询',
     handler: async (c) => {
         const params = getFeatureSettings(c.groupId, 'black').params;
-        const history = loadHistory();
+        const history = loadBlackHistory();
         if (!history.length) {
             await sendGroup(c.groupId, paramText(params, 'black_empty', '还没有记录任何黑历史呢'));
             return;
@@ -165,7 +144,7 @@ registerCommand({
             return;
         }
 
-        const history = loadHistory();
+        const history = loadBlackHistory();
         const index = history.findIndex((r) => Number(r.id) === id);
         if (index < 0) {
             await sendGroup(
@@ -176,7 +155,7 @@ registerCommand({
         }
 
         history.splice(index, 1);
-        saveHistory(history);
+        saveBlackHistory(history);
         await sendGroup(c.groupId, paramText(params, 'black_deleted', '我忘掉编号为 {id} 的黑历史了！', { id }));
     },
 });

@@ -12,9 +12,16 @@ export const PopoverContent = React.forwardRef<
     React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content> & {
         /** 内容宽度，默认跟随触发器；传固定值可让浮层更宽 */
         width?: number;
+        /**
+         * 是否挂到 body（默认 true）。
+         *
+         * 放在 Radix 弹窗（modal）里时必须传 false：弹窗会给 body 加 `pointer-events: none`，
+         * 挂到 body 的浮层既点不动、层级也压在弹窗底下；内联渲染则留在弹窗的层叠上下文里。
+         */
+        portal?: boolean;
     }
->(({ className, align = 'start', sideOffset = 6, width, ...props }, ref) => (
-    <PopoverPrimitive.Portal>
+>(({ className, align = 'start', sideOffset = 6, width, portal = true, ...props }, ref) => {
+    const content = (
         <PopoverPrimitive.Content
             ref={ref}
             align={align}
@@ -27,6 +34,8 @@ export const PopoverContent = React.forwardRef<
             style={width ? ({ '--gm-pop-w': `${width}px` } as React.CSSProperties) : undefined}
             {...props}
         />
-    </PopoverPrimitive.Portal>
-));
+    );
+
+    return portal ? <PopoverPrimitive.Portal>{content}</PopoverPrimitive.Portal> : content;
+});
 PopoverContent.displayName = 'PopoverContent';
