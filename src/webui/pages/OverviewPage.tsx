@@ -1,4 +1,4 @@
-import { Check, Copy, Search, TriangleAlert, Users } from 'lucide-react';
+import { Check, Copy, Search, TriangleAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { ActivityLogPanel } from '@/components/ActivityLogPanel';
@@ -6,6 +6,7 @@ import { ErrorLogPanel } from '@/components/ErrorLogPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
+import { IdentityAvatar } from '@/components/ui/identity';
 import { Input } from '@/components/ui/input';
 import { EmptyState, Panel, PanelHeader } from '@/components/ui/panel';
 import { SwitchField } from '@/components/ui/switch';
@@ -198,9 +199,7 @@ function FeatureMatrix(): React.JSX.Element {
                                         className="sticky left-0 z-10 w-[240px] min-w-[240px] bg-surface py-2 pr-3 pl-5 text-left font-normal"
                                     >
                                         <div className="flex min-w-0 items-center gap-2">
-                                            <span className="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-subtle">
-                                                <Users className="size-3.5" />
-                                            </span>
+                                            <IdentityAvatar kind="group" id={gid} />
                                             <span className="flex min-w-0 flex-col">
                                                 <span className="flex min-w-0 items-baseline gap-1.5">
                                                     <span className="truncate text-[13px] leading-4 text-ink-2">

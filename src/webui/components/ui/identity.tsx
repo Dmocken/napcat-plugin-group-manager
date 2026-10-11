@@ -86,7 +86,7 @@ export function IdentityCell({ kind, id, name, className }: IdentityCellProps): 
 }
 
 interface IdentityCardProps {
-    /** group = 群（左侧图标），user = QQ 用户（左侧 QQ 头像） */
+    /** group = QQ 群，user = QQ 用户；都取腾讯公开头像，失败时退化成图标 */
     kind: 'group' | 'user';
     /** 群号 / QQ 号 */
     id: string;
@@ -98,8 +98,8 @@ interface IdentityCardProps {
 }
 
 /**
- * 双行身份卡片：左侧图标（群）或 QQ 头像（用户），
- * 右侧第一行名称、第二行号码。「绑定群」与「Bot 管理员」共用，保证两处样式一致。
+ * 双行身份卡片：左侧群头像 / QQ 头像，
+ * 右侧第一行名称、第二行号码。「绑定群」「成员快照」「Bot 管理员」共用，保证样式一致。
  */
 export function IdentityCard({
     kind,
@@ -119,13 +119,7 @@ export function IdentityCard({
             )}
             title={showName ? `${name}（${id}）` : id || '—'}
         >
-            {kind === 'group' ? (
-                <span className="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface text-subtle">
-                    <Users className="size-3.5" />
-                </span>
-            ) : (
-                <IdentityAvatar kind="user" id={id} />
-            )}
+            <IdentityAvatar kind={kind} id={id} />
             <span className="flex min-w-0 flex-col">
                 {showName ? (
                     <span className="truncate text-[12px] leading-4 text-ink">{name}</span>
