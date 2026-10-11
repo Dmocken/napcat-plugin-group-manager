@@ -14,7 +14,7 @@ export function buildConfigSchema(ctx: NapCatPluginContext): PluginConfigSchema 
     return C.combine(
         C.html(
             '<div style="padding:12px 16px;border-radius:10px;background:linear-gradient(135deg,#6d5efc22,#00b3ff22);border:1px solid #6d5efc44;">' +
-                '<div style="font-size:15px;font-weight:600;margin-bottom:4px;">🛡️ 群管助手</div>' +
+                '<div style="font-size:15px;font-weight:600;margin-bottom:4px;">群管助手</div>' +
                 '<div style="font-size:12px;opacity:.75;line-height:1.6;">' +
                 '禁言 / 踢人 / 随机禁言 / 黑历史 / 新人禁言 / 静默检查 / 加群审核 / 撤回统计。<br/>' +
                 '分群的功能开关、群主管理员权限、成员名单请在下方插件页面中配置。' +

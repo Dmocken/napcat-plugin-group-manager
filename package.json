@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "NapCat 群管理插件合集：手动禁言/踢人/解禁/撤回、随机禁言、黑历史、新人禁言、静默成员检查、加群审核、撤回统计。支持一条配置绑定多个群，WebUI 可视化配置。",
   "author": "Dmocken",
+  "icon": "assets/icon.jpg",
   "license": "MIT",
   "type": "module",
   "main": "index.mjs",

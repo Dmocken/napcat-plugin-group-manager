@@ -64,6 +64,8 @@ const outPkg = {
     version: pkg.version,
     description: pkg.description,
     author: pkg.author,
+    // NapCat 插件列表图标：相对插件目录的图片路径（如 assets/icon.jpg）
+    icon: pkg.icon,
     license: pkg.license,
     type: pkg.type,
     main: pkg.main,
