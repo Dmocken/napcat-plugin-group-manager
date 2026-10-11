@@ -96,7 +96,7 @@ bash deploy.sh --plugins-dir /root/Napcat/opt/QQ/resources/app/app_launcher/napc
 | `npm run build:plugin` / `build:webui` | 只构建其中一半（产物在 `.build/plugin`、`src/webui/dist`） |
 | `npm run pack` | 只重新组装 `dist/`（要求两份产物都已构建过） |
 | `npm run typecheck` | TypeScript 类型检查（后端 + WebUI） |
-| `npm run dev:webui` | 启动 WebUI 开发服务器 |
+| `npm run dev:webui` | 启动 WebUI 开发服务器（本地假接口在 gitignore 的 `dev/` 里，只有本机有） |
 
 构建脚本的几个约定（专门为了避免「改了代码，部署后却没变化」）：
 

@@ -14,7 +14,7 @@
     "build:plugin": "vite build",
     "build:webui": "vite build -c vite.webui.config.ts",
     "pack": "node scripts/pack.mjs",
-    "dev:webui": "vite -c vite.webui.config.ts",
+    "dev:webui": "vite -c dev/vite.webui.dev.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.webui.json --noEmit"
   },
   "devDependencies": {
