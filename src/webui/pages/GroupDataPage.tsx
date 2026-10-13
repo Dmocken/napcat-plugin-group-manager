@@ -11,7 +11,7 @@ import {
     Trash2,
     Users,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { Panel, PanelHeader } from '@/components/ui/panel';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tabs } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { useServerNow } from '@/lib/server-clock';
 import type {
     BanRecordRow,
     BlackRecordRow,
@@ -30,7 +31,7 @@ import type {
     GroupProfile,
     RecallRow,
 } from '@/lib/types';
-import { cn, isQq, useNowSeconds } from '@/lib/utils';
+import { cn, isQq } from '@/lib/utils';
 import { useStore } from '@/store';
 
 /** 「没有记录群」的分组键（老黑历史数据没有 group_id） */
@@ -677,11 +678,14 @@ function BanDurationDialog({
     open,
     row,
     userName,
+    now,
     onClose,
 }: {
     open: boolean;
     row: BanRecordRow | null;
     userName: string;
+    /** 当前服务端秒（与列表同一时间轴，保证两边算出的「已过去」一致） */
+    now: number;
     onClose: () => void;
 }): React.JSX.Element {
     const update = useStore((s) => s.updateBanDuration);
@@ -695,7 +699,7 @@ function BanDurationDialog({
 
     const total = joinDuration(parts);
     // 后端要求新时长大于「已经过去的时间」，否则这条记录会立刻过期
-    const elapsed = row ? Math.max(0, row.duration - row.remaining) : 0;
+    const elapsed = row ? Math.max(0, now - row.banTime) : 0;
     const error =
         total <= 0
             ? '时长不能为 0'
@@ -777,14 +781,14 @@ function BanDurationDialog({
 function BanRow({
     row,
     userName,
-    since,
+    now,
     onEditDuration,
     onMigrate,
 }: {
     row: BanRecordRow;
     userName: string;
-    /** 距离这批数据从服务端拉回来过去了多少秒（用于本地实时走动） */
-    since: number;
+    /** 当前服务端秒（每秒由面板统一传入，避免每行各起一个定时器） */
+    now: number;
     onEditDuration: () => void;
     onMigrate: () => void;
 }): React.JSX.Element {
@@ -792,10 +796,10 @@ function BanRow({
     const unban = useStore((s) => s.unbanMember);
     const askConfirm = useStore((s) => s.askConfirm);
 
-    // 服务端给的 remaining 是拉取那一刻的值，这里按本地流逝的秒数推算，
-    // 于是「已禁言 / 剩余」每秒都在走，不需要反复请求接口
-    const remaining = Math.max(0, row.remaining - since);
-    const elapsed = Math.min(row.duration, row.duration - row.remaining + since);
+    // 「已禁言 / 剩余」全部由「禁言开始时间 + 总时长」在服务端时间轴上现算：
+    // 同一时刻无论渲染多少次结果都一样，5 秒轮询刷新时也就不会跳。
+    const elapsed = Math.min(row.duration, Math.max(0, now - row.banTime));
+    const remaining = Math.max(0, row.duration - elapsed);
     const expired = remaining <= 0;
     const endsAt = row.banTime + row.duration;
 
@@ -893,13 +897,9 @@ function BanRecordsPanel(): React.JSX.Element {
     const [migrating, setMigrating] = useState<BanRecordRow | null>(null);
     const [editingDuration, setEditingDuration] = useState<BanRecordRow | null>(null);
 
-    // 实时走动：以「这批数据拉到手的时刻」为锚点，用本地时钟推算已经过去多少秒
-    const now = useNowSeconds();
-    const fetchedAt = useRef(Math.floor(Date.now() / 1000));
-    useEffect(() => {
-        fetchedAt.current = Math.floor(Date.now() / 1000);
-    }, [rows]);
-    const since = Math.max(0, now - fetchedAt.current);
+    // 实时走动：读服务端时间轴上的「现在」，与这批数据是什么时候拉回来的无关，
+    // 因此每 5 秒的静默刷新不会让时长跳一下
+    const now = useServerNow();
 
     const sections = useMemo(
         () => buildSections(countByGroup(rows), profiles),
@@ -1008,7 +1008,7 @@ function BanRecordsPanel(): React.JSX.Element {
                                         row={row}
                                         // 优先用记录里存下的群名片，老记录退回好友列表
                                         userName={row.userName || userName(row.userId)}
-                                        since={since}
+                                        now={now}
                                         onEditDuration={() => setEditingDuration(row)}
                                         onMigrate={() => setMigrating(row)}
                                     />
@@ -1016,8 +1016,9 @@ function BanRecordsPanel(): React.JSX.Element {
                             </div>
 
                             <SectionHint>
-                                「已禁言 / 剩余」按本地时钟每秒实时走动，到点会显示「已过期」（刷新后由后端清掉）；
-                                列表每 5 秒自动刷新一次。「是否退群」来自退群 / 被踢通知：已退群的记录会在该成员重新入群
+                                「已禁言 / 剩余」按服务端时钟（禁言时间 + 总时长）每秒实时走动，到点会显示「已过期」
+                                （刷新后由后端清掉）；列表每 5 秒自动刷新一次，刷新不会让时长跳变。
+                                「是否退群」来自退群 / 被踢通知：已退群的记录会在该成员重新入群
                                 （含同配置组的其它群）时按「总时长」从头重新禁言 —— 不扣掉已经过去的时间。
                                 sm / smplus 的禁言标为「不重禁」，退群重进后不会再禁一次。
                                 行尾按钮随状态变：成员还在群里是「解禁」（解除本群禁言 + 删记录，不发群消息），
@@ -1054,6 +1055,7 @@ function BanRecordsPanel(): React.JSX.Element {
                         ? editingDuration.userName || userName(editingDuration.userId)
                         : ''
                 }
+                now={now}
                 onClose={() => setEditingDuration(null)}
             />
         </>

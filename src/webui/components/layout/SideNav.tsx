@@ -67,7 +67,7 @@ export function SideNav(): React.JSX.Element {
     const global = useStore((s) => s.global);
     const profiles = useStore((s) => s.profiles);
     const dirty = useStore((s) => s.dirty);
-    const liveUptime = useLiveUptime(status?.uptimeSeconds);
+    const liveUptime = useLiveUptime(status?.uptimeSeconds, status?.serverTime);
 
     // 没有未保存的修改时，直接用后端返回的实时汇总，避免别处的改动在这里看不到
     const summary = status?.summary;

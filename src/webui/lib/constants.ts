@@ -6,6 +6,7 @@ import {
     Gavel,
     SearchX,
     Shuffle,
+    Trophy,
     UserPlus,
     type LucideIcon,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ export const TEXT_FIELDS = [
 export const FEATURE_ICONS: Record<string, LucideIcon> = {
     ban: Gavel,
     random_ban: Shuffle,
+    sm_stats: Trophy,
     black: BookMarked,
     newban: UserPlus,
     check_silent: SearchX,
@@ -38,6 +40,7 @@ export const FEATURE_ICONS: Record<string, LucideIcon> = {
 export const FEATURE_SHORT: Record<string, string> = {
     ban: '禁言/踢人',
     random_ban: '随机禁言',
+    sm_stats: '禁言统计',
     black: '黑历史',
     newban: '新人禁言',
     check_silent: '静默检查',

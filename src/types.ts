@@ -6,6 +6,7 @@
 export type FeatureKey =
     | 'ban'
     | 'random_ban'
+    | 'sm_stats'
     | 'black'
     | 'newban'
     | 'check_silent'

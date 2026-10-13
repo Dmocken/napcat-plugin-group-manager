@@ -163,9 +163,15 @@ export interface BanRecordRow {
     userId: string;
     /** 保留的禁言时长（秒） */
     duration: number;
-    /** 禁言开始时间戳（秒） */
+    /** 禁言开始时间戳（秒，服务端时间轴） */
     banTime: number;
-    /** 剩余保留时长（秒） */
+    /**
+     * 服务端算出的剩余保留时长（秒）。
+     *
+     * 页面不再使用它做展示 —— 「已禁言 / 剩余 / 解禁时间」一律由 banTime + duration
+     * 在服务端时间轴上现算（见 lib/server-clock.ts），只有「服务端相对量 + 本地流逝」
+     * 混着用才会出现 5s 轮询时的跳变。这里保留字段供接口自检 / 兼容。
+     */
     remaining: number;
     /** 是否已退群；undefined = 无法判断（老数据 / 没收到退群通知） */
     left?: boolean;
@@ -213,6 +219,11 @@ export interface StatusInfo {
     uptime: string;
     /** 运行秒数，前端据此本地走秒（旧后端可能不返回） */
     uptimeSeconds?: number;
+    /**
+     * 取 uptimeSeconds 那一刻的服务端时间（**毫秒**时间戳），
+     * 用于把运行时长算在服务端时间轴上（见 lib/server-clock.ts）
+     */
+    serverTime?: number;
     dataPath: string;
     stats: {
         messageReceived: number;

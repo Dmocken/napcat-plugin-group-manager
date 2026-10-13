@@ -7,7 +7,7 @@
  */
 
 import { DEFAULT_NEWBAN_REMUTE, DEFAULT_NEWBAN_WELCOME } from '../constants';
-import { findPendingBan, removeBanRecord } from '../core/ban-records';
+import { findPendingBan, removeBanRecord, restoreBanRecord } from '../core/ban-records';
 import { registerNotice } from '../core/events';
 import { at, callAction, renderTemplate, sendGroup } from '../core/messages';
 import { canToggle } from '../core/permission';
@@ -45,6 +45,7 @@ registerNotice('group_increase', 'newban', async (ctx) => {
     // 0) 先消费记录再发起禁言。
     // 禁言生效后 NapCat 会推 group_ban，那条通知会给同一条 key 写入新记录；
     // 如果反过来「先禁言、最后再删」，删除就可能落在新记录之后，把它误删掉。
+    // 代价是中途失败会丢掉这条记录，所以下面失败分支要按原样还回去。
     if (hit) removeBanRecord(hit.groupId, userId);
 
     // 1) 禁言（与文案分开 try，任何一步失败都能在日志里看出是哪一步）
@@ -59,6 +60,14 @@ registerNotice('group_increase', 'newban', async (ctx) => {
         );
     } catch (e) {
         logError(`[群管助手] 禁言失败 group=${groupId} user=${userId} duration=${duration}:`, e);
+        // 禁言没发出去 → 把刚消费掉的那条记录按原样放回去（ban_time 不变），
+        // 否则这个人再退群重进就不会被重新禁言了，等于从记录里跑掉
+        if (hit) {
+            restoreBanRecord(hit.groupId, userId, hit.record);
+            logDebug(
+                `[群管助手] 重禁失败，记录已还原 group=${hit.groupId} user=${userId} duration=${hit.record.duration}`,
+            );
+        }
     }
 
     // 2) 文案（支持 {time} 与 {image=...}）

@@ -23,6 +23,7 @@ import { resolveNickname } from '../core/nicknames';
 import { isGlobalAdmin } from '../core/permission';
 import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
+import { recordSmMute } from '../core/sm-stats';
 import { logDebug, logError } from '../core/state';
 import { paramText } from '../core/texts';
 import { schedule } from '../core/timers';
@@ -243,10 +244,18 @@ registerCommand({
 /** 禁言记录：任何群都要记录（新人禁言的「退群重进重禁」依赖它），因此不受功能开关限制 */
 registerNotice('group_ban', null, async (ctx) => {
     if (ctx.event.duration && ctx.event.duration > 0) {
+        const duration = ctx.event.duration;
         // sm / smplus 打的标记：这类禁言不参与「退群重进重新禁言」
         // （标记带预期时长，只有时长对得上的通知才消费它）
-        const remute = !consumeNoRemuteBan(ctx.groupId, ctx.userId, ctx.event.duration);
-        addBanRecord(ctx.groupId, ctx.userId, ctx.event.duration, { remute });
+        const isSmBan = consumeNoRemuteBan(ctx.groupId, ctx.userId, duration);
+        addBanRecord(ctx.groupId, ctx.userId, duration, { remute: !isSmBan });
+
+        // sm / smplus 的娱乐向禁言：计入「禁言时长统计」（跨群按 QQ 累计）。
+        // 这条通知本身不受群功能开关限制（禁言记录任何群都要写），
+        // 所以统计开关要单独判一次，只在后台开了「禁言时长统计」的群里记。
+        if (isSmBan && getFeatureSettings(ctx.groupId, 'sm_stats').enabled) {
+            recordSmMute(ctx.userId, duration);
+        }
 
         // 通知事件只带 QQ 号，昵称要反查（有缓存与超时保护）。
         // 不 await：记录先落盘，查到名字再补写，免得接口慢的时候拖住事件处理。

@@ -2,12 +2,33 @@
  * 通用工具：时长解析/格式化、时间戳归一化、参数取值
  */
 
-/** 秒数 → 人类可读中文时长（3天 / 2小时 / 5分钟 / 30秒） */
+/** 秒数 → 人类可读中文时长（3天 / 2小时 / 5分钟 / 30秒）；只取最大那一段 */
 export function formatDuration(seconds: number): string {
     if (seconds >= 86400) return `${Math.floor(seconds / 86400)}天`;
     if (seconds >= 3600) return `${Math.floor(seconds / 3600)}小时`;
     if (seconds >= 60) return `${Math.floor(seconds / 60)}分钟`;
     return `${seconds}秒`;
+}
+
+/**
+ * 秒数 → 逐级精确的中文时长（1天2小时3分钟4秒）。
+ *
+ * 排行这类要区分细粒度的地方用它：`formatDuration` 会把 3600 与 7199 都显示成
+ * 「1小时」，按秒排序时看起来就像并列。
+ */
+export function formatDurationExact(seconds: number): string {
+    const s = Math.max(0, Math.floor(seconds));
+    const parts: string[] = [];
+    const days = Math.floor(s / 86400);
+    const hours = Math.floor((s % 86400) / 3600);
+    const minutes = Math.floor((s % 3600) / 60);
+    const secs = s % 60;
+
+    if (days) parts.push(`${days}天`);
+    if (hours) parts.push(`${hours}小时`);
+    if (minutes) parts.push(`${minutes}分钟`);
+    if (secs || !parts.length) parts.push(`${secs}秒`);
+    return parts.join('');
 }
 
 /** 解析「时长 + 单位」，无法解析返回 0 */

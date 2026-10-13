@@ -283,7 +283,7 @@ export function OverviewPage(): React.JSX.Element {
     const global = useStore((s) => s.global);
     const lastSavedAt = useStore((s) => s.lastSavedAt);
     const toast = useStore((s) => s.toast);
-    const liveUptime = useLiveUptime(status?.uptimeSeconds);
+    const liveUptime = useLiveUptime(status?.uptimeSeconds, status?.serverTime);
     const uptime = liveUptime === undefined ? (status?.uptime ?? '—') : formatUptime(liveUptime);
 
     // 记录管理员最近一次访问本页的时间（纯前端，localStorage）

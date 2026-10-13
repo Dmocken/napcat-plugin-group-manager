@@ -76,6 +76,20 @@ function requestPassword(req: PluginHttpRequest): string {
 }
 
 /**
+ * 响应头里回带服务端时间（**毫秒**时间戳，精度直接决定前端估算的准确度）。
+ *
+ * 前端据此校准本地时钟（见 webui/lib/server-clock.ts），把「剩余 / 已禁言」这类
+ * 时长算在服务端的时间轴上，避免本地外推与服务端判定对不上而跳变。
+ * 挂在每条接口上，前端不用额外请求校时。
+ */
+function withServerTime(handler: PluginRequestHandler): PluginRequestHandler {
+    return (req, res, next) => {
+        res.setHeader('x-server-time', String(Date.now()));
+        return handler(req, res, next);
+    };
+}
+
+/**
  * 密码守卫：未在「插件配置」里设置密码时放行（保持旧行为）；
  * 设置了密码后，请求必须带上正确密码，否则 401。
  */
@@ -98,25 +112,29 @@ function publicGlobal(): Record<string, unknown> {
 export function registerApiRoutes(ctx: NapCatPluginContext): void {
     const router = ctx.router;
 
-    /* 所有接口都过一遍密码守卫 */
+    /* 所有接口都过一遍密码守卫，并统一带上服务端时间 */
     const get = (path: string, handler: PluginRequestHandler): void => {
-        router.getNoAuth(path, guard(handler));
+        router.getNoAuth(path, withServerTime(guard(handler)));
     };
     const post = (path: string, handler: PluginRequestHandler): void => {
-        router.postNoAuth(path, guard(handler));
+        router.postNoAuth(path, withServerTime(guard(handler)));
     };
 
     /* ---------------- 状态 ---------------- */
 
     get('/status', (_req, res) => {
         const profiles = getProfiles();
+        const uptime = uptimeSeconds();
         res.json({
             code: 0,
             data: {
                 pluginName: ctx.pluginName,
                 version: '0.1.0',
-                uptime: uptimeText(),
-                uptimeSeconds: uptimeSeconds(),
+                uptime: uptimeText(uptime),
+                uptimeSeconds: uptime,
+                // 与 uptimeSeconds 同一时刻取出：前端用「服务端时间 − 运行秒数」还原启动时刻，
+                // 之后就能在服务端时间轴上实时走秒（见 webui/lib/server-clock.ts）。单位毫秒。
+                serverTime: Date.now(),
                 dataPath: getDataDir(),
                 stats: { ...stats },
                 global: publicGlobal(),

@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
-import { useEffect, useRef, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
+
+import { useServerNow } from './server-clock';
 
 /** shadcn/ui 约定的类名合并工具 */
 export function cn(...inputs: ClassValue[]): string {
@@ -102,40 +103,21 @@ export function formatUptime(seconds: number): string {
 }
 
 /**
- * 每秒自增的当前时间戳（秒）。
+ * 运行时长实时走秒。
  *
- * 用于让「剩余时长 / 已禁言时长」这类数值在页面上实时走动，
- * 不必为了一个倒计时反复请求接口。
+ * 后端在 `/status` 里同时给出「服务端时间」与「已运行秒数」，两者相减就是插件启动
+ * 时刻的绝对值；之后每秒用服务端时钟回推现在运行了多久。这样轮询刷新不会让读数
+ * 跳变，客户端时钟被改也不受影响（细节见 lib/server-clock.ts）。
+ *
+ * serverTimeMs 是服务端毫秒时间戳，seconds 是同一时刻的运行秒数。
  */
-export function useNowSeconds(): number {
-    const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+export function useLiveUptime(
+    seconds: number | undefined,
+    serverTimeMs: number | undefined,
+): number | undefined {
+    const now = useServerNow();
 
-    useEffect(() => {
-        const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
-        return () => window.clearInterval(id);
-    }, []);
-
-    return now;
-}
-
-/**
- * 运行时长实时走秒：以后端上报的秒数为锚点本地每秒自增，
- * 仅靠轮询时读数会整段跳变，这里保证「已运行」逐秒可见地变化。
- */
-export function useLiveUptime(seconds: number | undefined): number | undefined {
-    const anchor = useRef({ base: seconds ?? 0, at: Date.now() });
-    const [, tick] = useState(0);
-
-    if (seconds !== undefined && seconds !== anchor.current.base) {
-        anchor.current = { base: seconds, at: Date.now() };
-    }
-
-    useEffect(() => {
-        if (seconds === undefined) return;
-        const id = window.setInterval(() => tick((n) => n + 1), 1000);
-        return () => window.clearInterval(id);
-    }, [seconds]);
-
-    if (seconds === undefined) return undefined;
-    return anchor.current.base + Math.floor((Date.now() - anchor.current.at) / 1000);
+    if (seconds === undefined || serverTimeMs === undefined) return undefined;
+    // 插件启动时刻（服务端秒）= 服务端当前秒 − 已运行秒数
+    return Math.max(0, now - (serverTimeMs / 1000 - seconds));
 }

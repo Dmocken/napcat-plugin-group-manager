@@ -80,6 +80,33 @@ export function addBanRecord(
     saveBanRecords(records);
 }
 
+/**
+ * 把一条已被消费掉的禁言记录原样放回去（只有回滚时才用）。
+ *
+ * 「退群重进重禁」需要先删记录、再发起禁言（顺序理由见 handlers/newban.ts），
+ * 万一禁言没发出去，就得靠这里把记录还回去 —— `ban_time` 保持原值，
+ * 已经过去的时间不重置，于是这个人再退群重进时仍然会被重新禁言。
+ *
+ * 期间如果已经有更新的记录（禁言其实成功了、group_ban 通知先到了），保持不动，
+ * 免得把新记录盖成旧的。
+ */
+export function restoreBanRecord(
+    groupId: number | string,
+    userId: number | string,
+    record: BanRecord,
+): void {
+    const records = loadBanRecords();
+    const groupKey = String(groupId);
+    const userKey = String(userId);
+    const existing = records[groupKey]?.[userKey];
+
+    if (existing && Number(existing.ban_time ?? 0) >= Number(record.ban_time ?? 0)) return;
+
+    if (!records[groupKey]) records[groupKey] = {};
+    records[groupKey][userKey] = { ...record };
+    saveBanRecords(records);
+}
+
 /* ---------------- 不参与重禁的禁言（sm / smplus） ----------------
  *
  * group_ban 通知里看不出这条禁言是谁发起的（operator 永远是执行动作的 bot），

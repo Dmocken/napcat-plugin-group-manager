@@ -5,6 +5,8 @@
  * 因此 BASE 通过剥离最后一段已知前缀来推断，接口统一挂在 BASE + '/api'。
  */
 
+import { noteServerTime } from './server-clock';
+
 const BASE = location.pathname.replace(/\/(page|files|api)\/.*$/, '');
 export const API_BASE = `${BASE}/api`;
 
@@ -81,11 +83,15 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     const pwd = savedPassword();
     if (pwd) headers['x-plugin-password'] = pwd;
 
+    // t1/t4 只用来算往返耗时，配合响应头里的 x-server-time 校准服务端时钟
+    const t1 = Date.now();
     const res = await fetch(API_BASE + path, {
         method: options.method ?? 'GET',
         headers,
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
+    const t4 = Date.now();
+    noteServerTime(Number(res.headers.get('x-server-time')), t1, t4);
 
     if (res.status === 401) throw new NeedPasswordError();
 

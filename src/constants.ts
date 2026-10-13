@@ -22,6 +22,7 @@ export const PLUGIN_DISPLAY_NAME = '群管助手';
 export const FEATURE_KEYS: FeatureKey[] = [
     'ban',
     'random_ban',
+    'sm_stats',
     'black',
     'newban',
     'check_silent',
@@ -44,6 +45,12 @@ export const DEFAULT_NEWBAN_REMUTE =
     ' 检测到你在退群前处于禁言状态，重新施加禁言{time}。\n' +
     '这不是新入群禁言，请不要尝试通过退群重进来逃避禁言！\n' +
     'Phira相关下载方式及其使用的问题均在群公告！';
+
+/** sm / smplus 禁言时长排行的默认文案（占位符见 FEATURE_TEXT_PARAMS 的说明） */
+export const DEFAULT_SM_STATS_TITLE = '📊 sm / smplus 被禁言时长排行（前 {limit} 名）';
+export const DEFAULT_SM_STATS_LINE =
+    '{rank}. {user} —— 最长 {duration}（{clock}）· 累计 {total} / {count} 次';
+export const DEFAULT_SM_STATS_EMPTY = '还没有 sm / smplus 的禁言记录';
 
 /**
  * 加群审核关键词表默认值
@@ -91,6 +98,9 @@ function textParam(key: string, label: string, def: string, type: ParamType = 't
  *
  * 占位符：{user} 目标 QQ、{time} 时长、{seconds} 秒数、{clock} 时间点、
  *        {id} 编号、{content} 正文、{group} 群号、{count} 次数、{error} 错误信息
+ *
+ * 禁言时长排行（sm_stats）另有一组：{rank} 名次、{limit} 显示条数、
+ * {duration} 最长一次的时长（逐级精确，如 1小时2分钟3秒）、{total} 累计被禁言时长
  */
 export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
     ban: [
@@ -137,6 +147,11 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
             'textarea',
         ),
         textParam('sm_failed', '随机禁言失败', '禁言失败，你不会认真一点吗？ {error}'),
+    ],
+    sm_stats: [
+        textParam('sm_stats_title', '排行标题', DEFAULT_SM_STATS_TITLE),
+        textParam('sm_stats_line', '排行单行', DEFAULT_SM_STATS_LINE, 'textarea'),
+        textParam('sm_stats_empty', '还没有记录时的提示', DEFAULT_SM_STATS_EMPTY),
     ],
     black: [
         textParam('black_no_reply', '入典未引用消息', '你想让我记住什么啊？'),
@@ -304,7 +319,11 @@ export const FEATURES: FeatureMeta[] = [
     {
         key: 'random_ban',
         label: '随机禁言',
-        usage: '直接发送 sm 或 smplus（无需前缀）\n有权限时：sm @用户 随机禁言被 @ 的人\n无权限时：sm 禁言自己',
+        usage:
+            '直接发送 sm 或 smplus（无需前缀）\n' +
+            '有权限时：sm @用户 随机禁言被 @ 的人\n' +
+            '无权限时：sm 禁言自己\n' +
+            'sm list / smplus list —— 查看禁言时长排行（需同时开启「禁言时长统计」）',
         block: true,
         implemented: true,
         params: [
@@ -313,6 +332,25 @@ export const FEATURES: FeatureMeta[] = [
             { key: 'smplus_min', label: 'smplus 最短时长（秒）', type: 'number', default: 1 },
             { key: 'smplus_max', label: 'smplus 最长时长（秒）', type: 'number', default: 28800 },
             ...(FEATURE_TEXT_PARAMS.random_ban ?? []),
+        ],
+    },
+    {
+        key: 'sm_stats',
+        label: '禁言时长统计',
+        usage:
+            'sm list / smplus list —— 查看被禁言时长最长的用户排行\n' +
+            '所有人均可查询；数据跨群累计，只记录 QQ 号与时长，不含群 / 配置组信息',
+        block: true,
+        implemented: true,
+        params: [
+            {
+                key: 'top',
+                label: '排行显示人数',
+                type: 'number',
+                default: 10,
+                hint: 'sm list / smplus list 最多显示多少条',
+            },
+            ...(FEATURE_TEXT_PARAMS.sm_stats ?? []),
         ],
     },
     {
