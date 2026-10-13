@@ -24,12 +24,22 @@ export interface ParamOption {
     label: string;
 }
 
+/** 文案里可用的占位符（由后端 meta 带过来，汇总显示在「提示文案」底部） */
+export interface TextVarMeta {
+    /** 占位符名，渲染成 {name} */
+    name: string;
+    /** 一句话说明；空串表示没有说明 */
+    desc: string;
+}
+
 export interface ParamMeta {
     key: string;
     label: string;
     type: ParamType;
     default: unknown;
     hint?: string;
+    /** 「提示文案」参数支持的占位符 */
+    vars?: TextVarMeta[];
     /** 参数区分组名（缺省归入「参数」） */
     group?: string;
     /** type = wordlists 时的子词表定义 */

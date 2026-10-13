@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import { ParamField } from '@/components/profile/ParamField';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { featureIcon } from '@/lib/constants';
-import { textParamsOf } from '@/lib/profile';
+import { textParamsOf, textVarsOf } from '@/lib/profile';
 import type { FeatureMeta, GroupProfile } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store';
@@ -18,6 +18,7 @@ export function TextRow({
 }): React.JSX.Element | null {
     const settings = profile.features[meta.key];
     const params = textParamsOf(meta);
+    const vars = textVarsOf(meta);
     const updateFeature = useStore((s) => s.updateFeature);
 
     const storeKey = `text|${profile.id}|${meta.key}`;
@@ -48,19 +49,33 @@ export function TextRow({
                 </CollapsibleTrigger>
 
                 <CollapsibleContent>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-3.5 border-t border-line bg-canvas/40 px-5 py-4">
-                        {params.map((param) => (
-                            <ParamField
-                                key={param.key}
-                                param={param}
-                                value={settings.params[param.key]}
-                                onChange={(value) =>
-                                    updateFeature(profile.id, meta.key, (draft) => {
-                                        draft.params[param.key] = value;
-                                    })
-                                }
-                            />
-                        ))}
+                    <div className="border-t border-line bg-canvas/40 px-5 py-4">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-3.5">
+                            {params.map((param) => (
+                                <ParamField
+                                    key={param.key}
+                                    param={param}
+                                    value={settings.params[param.key]}
+                                    onChange={(value) =>
+                                        updateFeature(profile.id, meta.key, (draft) => {
+                                            draft.params[param.key] = value;
+                                        })
+                                    }
+                                />
+                            ))}
+                        </div>
+
+                        {/* 占位符统一放在所有输入框下面一行：同一功能的文案共用这批变量，
+                            逐个字段重复一遍太长，也容易各写各的 */}
+                        <p className="mt-4 border-t border-line/70 pt-3 text-[11px] leading-relaxed text-subtle">
+                            {vars.length
+                                ? `可用占位符：${vars
+                                      .map((item) =>
+                                          item.desc ? `{${item.name}} ${item.desc}` : `{${item.name}}`,
+                                      )
+                                      .join('；')}`
+                                : '这些文案不支持占位符，会按原样发送'}
+                        </p>
                     </div>
                 </CollapsibleContent>
             </div>

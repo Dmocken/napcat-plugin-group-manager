@@ -81,12 +81,27 @@ export interface ParamOption {
     label: string;
 }
 
+/**
+ * 文案里可用的占位符。
+ *
+ * 「提示文案」的输入框下方不再逐个列占位符，而是由 WebUI 汇总成一行放在
+ * 该功能全部输入框的下面（见 webui/components/profile/TextRow.tsx）。
+ */
+export interface TextVarMeta {
+    /** 占位符名，渲染成 {name} */
+    name: string;
+    /** 一句话说明；空串表示没有说明 */
+    desc: string;
+}
+
 export interface ParamMeta {
     key: string;
     label: string;
     type: ParamType;
     default: unknown;
     hint?: string;
+    /** 「提示文案」参数支持的占位符（其它分组的参数留空） */
+    vars?: TextVarMeta[];
     /** WebUI 参数区分组名（缺省归入「参数」） */
     group?: string;
     /** type = wordlists 时，子词表定义 */

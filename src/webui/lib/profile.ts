@@ -6,6 +6,7 @@ import type {
     GroupProfile,
     MetaResponse,
     ParamMeta,
+    TextVarMeta,
 } from './types';
 
 /** 当前功能顺序：过滤掉已不存在的功能，缺失的补到末尾 */
@@ -31,6 +32,22 @@ export function behaviorParams(meta: FeatureMeta): ParamMeta[] {
 /** 功能里的提示文案参数 */
 export function textParamsOf(meta: FeatureMeta): ParamMeta[] {
     return (meta.params ?? []).filter((param) => param.group === TEXT_GROUP);
+}
+
+/**
+ * 该功能全部提示文案支持的占位符（按首次出现保序去重）。
+ *
+ * 给「提示文案」页签用：占位符清单统一汇总成一行放在所有输入框下面，
+ * 不再挂到每个输入框自己的说明里（见 components/profile/TextRow.tsx）。
+ */
+export function textVarsOf(meta: FeatureMeta): TextVarMeta[] {
+    const seen = new Map<string, string>();
+    textParamsOf(meta).forEach((param) => {
+        (param.vars ?? []).forEach((item) => {
+            if (!seen.has(item.name)) seen.set(item.name, item.desc);
+        });
+    });
+    return [...seen].map(([name, desc]) => ({ name, desc }));
 }
 
 /** 折叠状态下显示的一行摘要 */

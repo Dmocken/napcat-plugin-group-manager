@@ -118,9 +118,12 @@ const TEXT_VARS: Record<string, string> = {
 /**
  * 文案参数统一构造：默认单行输入，长文本用 textarea。
  *
- * hint 自动生成 = 默认文案里出现的 {xxx} ∪ extra 声明的占位符，逐个查 TEXT_VARS；
+ * 占位符清单自动推导 = 默认文案里出现的 {xxx} ∪ extra 声明的占位符，逐个查 TEXT_VARS；
  * extra 还用来覆盖词典（同一个占位符在不同文案里的含义可能不一样），
  * 以及补充「默认文案里没写、但替换时其实支持」的占位符。
+ *
+ * 结果存在 `vars` 里，而不是写成每个输入框自己的 hint —— WebUI 会把该功能的
+ * 全部占位符汇总成一行，放在所有输入框下面（见 webui/components/profile/TextRow.tsx）。
  */
 function textParam(
     key: string,
@@ -136,23 +139,21 @@ function textParam(
         ]),
     ];
 
-    const describe = (name: string): string => {
-        const text = extra[name] ?? TEXT_VARS[name];
-        return text ? `{${name}} ${text}` : `{${name}}`;
+    return {
+        key,
+        label,
+        type,
+        default: def,
+        group: '提示文案',
+        vars: names.map((name) => ({ name, desc: extra[name] ?? TEXT_VARS[name] ?? '' })),
     };
-
-    const hint = names.length
-        ? `可用占位符：${names.map(describe).join('；')}`
-        : '这段文案不支持占位符，按原样发送';
-
-    return { key, label, type, default: def, group: '提示文案', hint };
 }
 
 /**
  * 各功能的提示文案参数（WebUI 里按「提示文案」分组展示，默认收起）
  *
- * 每个参数支持哪些占位符由 textParam 自动写进 hint（WebUI 里显示为
- * 「可用占位符：{user} 目标 QQ 号；…」），这里不再维护一份清单。
+ * 每个参数支持哪些占位符由 textParam 自动推导进 `vars`；WebUI 把该功能所有文案的
+ * 占位符汇总成一行放在输入框下面，所以这里不用维护任何提示文本。
  */
 export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
     ban: [
@@ -468,18 +469,28 @@ export const FEATURES: FeatureMeta[] = [
                 label: '新人进群通知文案',
                 type: 'textarea',
                 default: DEFAULT_NEWBAN_WELCOME,
-                hint:
-                    '可用占位符：{time} 禁言时长（人类可读，如「5分钟」）；' +
-                    '{image=路径} 图片，路径相对插件的 assets 目录（如 /assets/tip.png），取不到会跳过',
                 group: '提示文案',
+                vars: [
+                    { name: 'time', desc: '禁言时长（人类可读，如「5分钟」）' },
+                    {
+                        name: 'image=路径',
+                        desc: '图片，路径相对插件的 assets 目录（如 /assets/tip.png），取不到会跳过',
+                    },
+                ],
             },
             {
                 key: 'remute_text',
                 label: '退群重进重新禁言文案',
                 type: 'textarea',
                 default: DEFAULT_NEWBAN_REMUTE,
-                hint: '同上：支持 {time} 与 {image=路径}',
                 group: '提示文案',
+                vars: [
+                    { name: 'time', desc: '禁言时长（人类可读，如「5分钟」）' },
+                    {
+                        name: 'image=路径',
+                        desc: '图片，路径相对插件的 assets 目录（如 /assets/tip.png），取不到会跳过',
+                    },
+                ],
             },
             ...(FEATURE_TEXT_PARAMS.newban ?? []),
         ],
@@ -581,7 +592,7 @@ export const FEATURES: FeatureMeta[] = [
                 label: '重复加群拒绝理由',
                 type: 'text',
                 default: '您已加入其它官方群，请勿重复加群！',
-                hint: '这段文案不支持占位符，会按原样作为拒绝理由发给申请人',
+                hint: '会按原样作为拒绝理由发给申请人',
                 group: '提示文案',
             },
             {
@@ -589,7 +600,7 @@ export const FEATURES: FeatureMeta[] = [
                 label: '群满拒绝理由',
                 type: 'text',
                 default: '群聊已满，如有需要可以先加入Phira官方QQ频道',
-                hint: '同上，不支持占位符',
+                hint: '同上',
                 group: '提示文案',
             },
             ...(FEATURE_TEXT_PARAMS.join_verify ?? []),
@@ -631,8 +642,8 @@ export const FEATURES: FeatureMeta[] = [
                 label: '撤回提醒文案',
                 type: 'text',
                 default: '您已被撤回消息 {count} 次，请注意言行，遵守群规！',
-                hint: '{count} 会替换为次数',
                 group: '提示文案',
+                vars: [{ name: 'count', desc: '该成员被撤回消息的次数' }],
             },
             ...(FEATURE_TEXT_PARAMS.recall_stats ?? []),
         ],
