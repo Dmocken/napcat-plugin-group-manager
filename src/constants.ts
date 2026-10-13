@@ -345,7 +345,9 @@ export const AI_PARAMS: ParamMeta[] = [
         type: 'textarea',
         default: DEFAULT_AI_PROMPT,
         group: 'AI 判断',
-        hint: '{question} 与 {answer} 会替换为申请时的问题和回答；要求模型只输出 1（同意）或 0（不同意）',
+        hint:
+            '可用占位符：{question} 入群问题；{answer} 申请人的回答。' +
+            '要求模型只输出数字 1（同意）或 0（不同意）',
     },
     {
         key: 'ai_timeout_ms',
@@ -353,6 +355,7 @@ export const AI_PARAMS: ParamMeta[] = [
         type: 'number',
         default: 10000,
         group: 'AI 判断',
+        hint: '调用 AI 接口的等待上限，超时按「AI 失败」处理（失败后的行为由「审核方式」决定）',
     },
 ];
 
@@ -388,10 +391,34 @@ export const FEATURES: FeatureMeta[] = [
         block: true,
         implemented: true,
         params: [
-            { key: 'sm_min', label: 'sm 最短时长（秒）', type: 'number', default: 1 },
-            { key: 'sm_max', label: 'sm 最长时长（秒）', type: 'number', default: 3600 },
-            { key: 'smplus_min', label: 'smplus 最短时长（秒）', type: 'number', default: 1 },
-            { key: 'smplus_max', label: 'smplus 最长时长（秒）', type: 'number', default: 28800 },
+            {
+                key: 'sm_min',
+                label: 'sm 最短时长（秒）',
+                type: 'number',
+                default: 1,
+                hint: '随机区间的下限；实际禁言时长在「最短 ~ 最长」之间随机取一个整秒',
+            },
+            {
+                key: 'sm_max',
+                label: 'sm 最长时长（秒）',
+                type: 'number',
+                default: 3600,
+                hint: '随机区间的上限；QQ 的禁言上限是 30 天（2592000 秒），填再大也会被协议端拒绝',
+            },
+            {
+                key: 'smplus_min',
+                label: 'smplus 最短时长（秒）',
+                type: 'number',
+                default: 1,
+                hint: 'smplus 随机区间的下限，与 sm 各自独立',
+            },
+            {
+                key: 'smplus_max',
+                label: 'smplus 最长时长（秒）',
+                type: 'number',
+                default: 28800,
+                hint: 'smplus 随机区间的上限，与 sm 各自独立；QQ 上限同样是 30 天',
+            },
             ...(FEATURE_TEXT_PARAMS.random_ban ?? []),
         ],
     },
@@ -429,7 +456,13 @@ export const FEATURES: FeatureMeta[] = [
         block: true,
         implemented: true,
         params: [
-            { key: 'ban_duration', label: '默认禁言时长（秒）', type: 'number', default: 180 },
+            {
+                key: 'ban_duration',
+                label: '默认禁言时长（秒）',
+                type: 'number',
+                default: 180,
+                hint: '新人入群时禁言的秒数（180 = 3 分钟）；「退群重进重新禁言」用的是记录里的原时长，不看这里',
+            },
             {
                 key: 'welcome_text',
                 label: '新人进群通知文案',
@@ -466,7 +499,13 @@ export const FEATURES: FeatureMeta[] = [
                 default: 1,
                 hint: '1 = 视为符合条件（保守筛查），0 = 跳过',
             },
-            { key: 'kick_reason', label: '默认踢出原因（可留空）', type: 'text', default: '' },
+            {
+                key: 'kick_reason',
+                label: '默认踢出原因（可留空）',
+                type: 'text',
+                default: '',
+                hint: 'check kick 时先私聊把原因发给本人再踢；留空则不私聊，直接踢',
+            },
             ...(FEATURE_TEXT_PARAMS.check_silent ?? []),
         ],
     },
@@ -527,6 +566,7 @@ export const FEATURES: FeatureMeta[] = [
                 type: 'number',
                 default: 1800,
                 group: '关键词检测',
+                hint: 'QQ 等级低于阈值的申请延迟这么久再通过；0 表示不延迟',
             },
             {
                 key: 'max_group_size',
@@ -579,7 +619,13 @@ export const FEATURES: FeatureMeta[] = [
         block: true,
         implemented: true,
         params: [
-            { key: 'thresholds', label: '提醒次数阈值（逗号分隔）', type: 'numberlist', default: [3, 5] },
+            {
+                key: 'thresholds',
+                label: '提醒次数阈值（逗号分隔）',
+                type: 'numberlist',
+                default: [3, 5],
+                hint: '被撤回次数达到其中任意一个值时，按「撤回提醒文案」提醒当事人一次',
+            },
             {
                 key: 'warning_text',
                 label: '撤回提醒文案',

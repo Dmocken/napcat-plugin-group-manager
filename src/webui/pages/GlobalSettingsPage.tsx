@@ -243,7 +243,7 @@ export function GlobalSettingsPage(): React.JSX.Element {
             <Panel>
                 <PanelHeader
                     title="通用提示文案"
-                    description="无权限、仅群聊等通用回复的覆盖文案；留空即使用内置默认值。"
+                    description="无权限、仅群聊等通用回复的覆盖文案；留空即使用内置默认值。这些文案不支持占位符，会按原样发送。"
                 />
                 <div className="grid grid-cols-2 gap-x-5 gap-y-4 p-5">
                     {TEXT_FIELDS.map((field) => {
