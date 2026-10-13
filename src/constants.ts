@@ -97,7 +97,7 @@ export const DEFAULT_AI_FAIL_NOTIFY =
  */
 const TEXT_VARS: Record<string, string> = {
     user: '目标 QQ 号',
-    name: '群名片（可能为空）',
+    name: '群名片',
     who: '群名片（QQ号），没名字时只有号码',
     time: '时长',
     seconds: '秒数',
@@ -169,7 +169,7 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
             '格式输错啦！正确格式：ban @用户 时长 单位（秒/分/时/天），中间都有空格哦',
         ),
         textParam('ban_success', '禁言成功回执', '已成功把用户 {user} 禁言{time}', 'text', {
-            time: '时长（这里填的是用户输入的原文，如「5分」）',
+            time: '时长',
         }),
         textParam('ban_failed', '禁言失败', '禁言失败：{error}'),
         textParam('ban_maybe_failed', '禁言无回执提示', '禁言操作可能失败，请检查机器人权限'),
@@ -208,7 +208,7 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
         textParam('sm_stats_title', '排行标题', DEFAULT_SM_STATS_TITLE),
         textParam('sm_stats_line', '排行单行', DEFAULT_SM_STATS_LINE, 'textarea', {
             user: 'QQ 号',
-            name: '群名片（可能为空）',
+            name: '群名片',
             seconds: '最长一次的秒数',
         }),
         textParam('sm_stats_empty', '还没有记录时的提示', DEFAULT_SM_STATS_EMPTY),
