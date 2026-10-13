@@ -9,9 +9,9 @@
  * - 昵称只是顺手留一份，方便看板 / sm list 显示（拿不到就退回好友列表 / 只显示号码）
  * - 数据来源是 group_ban 通知，且只统计 sm / smplus 发起的禁言
  *   （这两类禁言不参与「退群重进重禁」，由 core/ban-records.ts 的标记识别）
- * 两处排序口径：
- *   - 群内 `sm list` / `smplus list`（topSmMuted）：看「最长一次」（谁被随机禁得最狠）
- *   - 后台看板（listSmStats）：看「累计时长」（谁被禁得最多）
+ * 排序口径统一为**累计时长**降序（并列时比最长一次）：
+ * 群内 `sm list`（topSmMuted）与后台看板（listSmStats）用同一份顺序，前者只截前 N 名；
+ * 「最长一次 + 那次时间」作为附加信息一起展示，不参与排序。
  */
 
 import { readJson, writeJson } from './store';
@@ -116,12 +116,7 @@ function allRows(): SmStatRow[] {
         .filter((row) => row.longest > 0);
 }
 
-/**
- * 后台看板用：全部记录，按**累计时长**降序（并列时比最长一次）。
- *
- * 与群内 `sm list` 的口径不同：那边看「最长一次」（谁被随机禁得最狠），
- * 后台看的是「累计被禁了多久」。
- */
+/** 全部记录，按**累计时长**降序（并列时比最长一次） */
 export function listSmStats(): SmStatRow[] {
     return allRows().sort(
         (a, b) => b.total - a.total || b.longest - a.longest || a.userId.localeCompare(b.userId),
@@ -141,14 +136,8 @@ export function removeSmStat(userId: number | string): boolean {
     return true;
 }
 
-/** 被禁言时长最长的前 limit 名（最长一次降序，并列时按累计时长；群内 sm list 用） */
+/** 累计被禁言时长最长的前 limit 名（群内 `sm list` 用；与看板同一排序口径） */
 export function topSmMuted(limit: number): SmStatRow[] {
     const max = Math.max(1, Math.floor(limit) || 1);
-
-    return allRows()
-        .sort(
-            (a, b) =>
-                b.longest - a.longest || b.total - a.total || a.userId.localeCompare(b.userId),
-        )
-        .slice(0, max);
+    return listSmStats().slice(0, max);
 }

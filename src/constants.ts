@@ -339,7 +339,7 @@ export const FEATURES: FeatureMeta[] = [
         key: 'sm_stats',
         label: '禁言时长统计',
         usage:
-            'sm list / smplus list —— 查看被禁言时长最长的用户排行\n' +
+            'sm list / smplus list —— 查看累计被禁言时长最长的用户排行\n' +
             '所有人均可查询；数据跨群累计，只记录 QQ 号与时长，不含群 / 配置组信息',
         block: true,
         implemented: true,
