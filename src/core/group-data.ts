@@ -318,6 +318,8 @@ export function clearRecallRecords(groupId?: number | string): number {
  *
  * 开始时间不变，只改总时长，因此新时长必须大于「已经过去的时间」，
  * 否则这条记录会立刻被判定为过期（`getPendingBan` 会把它清掉）。
+ *
+ * 昵称 / 是否退群 / 是否参与重禁这些字段原样保留，不能在改时长时被抹掉。
  */
 export function updateBanDuration(
     groupId: number | string,
@@ -357,7 +359,9 @@ export function updateBanDuration(
         };
     }
 
-    records[groupKey][userKey] = { duration: seconds, ban_time: banTime };
+    // 只覆盖时长：以前这里重建了一个新对象，会把 user_name（昵称）和 left（是否退群）
+    // 一起抹掉 —— 页面上的名字随即消失，「退群重进重禁」的跨群命中也会失效
+    records[groupKey][userKey] = { ...record, duration: seconds, ban_time: banTime };
     saveBanRecords(records);
     return { ok: true };
 }
