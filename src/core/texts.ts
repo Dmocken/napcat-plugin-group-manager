@@ -10,6 +10,10 @@
  *   {content}  正文内容
  *   {group}    群号
  *   {error}    错误信息
+ * 禁言时长排行（sm list）另有 {rank} {limit} {who} {name} {duration} {total} {count}。
+ *
+ * 每条文案具体支持哪些占位符，会在 WebUI 的「提示文案」里作为说明直接显示出来
+ * （hint 由 constants.ts 的 textParam 扫描默认文案自动生成），这里的清单只是索引。
  * 未提供的占位符会原样保留（方便排查写错的占位符）。
  */
 

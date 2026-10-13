@@ -88,20 +88,71 @@ export const DEFAULT_AI_FAIL_NOTIFY =
 
 /* ---------------- 可自定义提示文案 ---------------- */
 
-/** 文案参数统一构造：默认单行输入，长文本用 textarea */
-function textParam(key: string, label: string, def: string, type: ParamType = 'text'): ParamMeta {
-    return { key, label, type, default: def, group: '提示文案' };
+/**
+ * 文案占位符词典：占位符 → 说明。
+ *
+ * 「提示文案」参数的 hint 由下面的 textParam 自动拼出来（扫描默认文案里的 {xxx}），
+ * 所以新增文案不用手写提示，改默认文案时提示也会跟着变。
+ * 同名占位符在不同文案里含义不同时（如 {time}），用 textParam 的 extra 覆盖。
+ */
+const TEXT_VARS: Record<string, string> = {
+    user: '目标 QQ 号',
+    name: '群名片（可能为空）',
+    who: '群名片（QQ号），没名字时只有号码',
+    time: '时长',
+    seconds: '秒数',
+    clock: '时间点',
+    duration: '时长（逐级精确，如 1小时2分钟3秒）',
+    total: '累计时长',
+    count: '次数',
+    rank: '名次',
+    limit: '显示条数',
+    id: '编号',
+    content: '正文',
+    group: '群号',
+    question: '入群问题',
+    answer: '申请人的回答',
+    error: '错误信息',
+};
+
+/**
+ * 文案参数统一构造：默认单行输入，长文本用 textarea。
+ *
+ * hint 自动生成 = 默认文案里出现的 {xxx} ∪ extra 声明的占位符，逐个查 TEXT_VARS；
+ * extra 还用来覆盖词典（同一个占位符在不同文案里的含义可能不一样），
+ * 以及补充「默认文案里没写、但替换时其实支持」的占位符。
+ */
+function textParam(
+    key: string,
+    label: string,
+    def: string,
+    type: ParamType = 'text',
+    extra: Record<string, string> = {},
+): ParamMeta {
+    const names = [
+        ...new Set([
+            ...(def.match(/\{[a-z_]+\}/g) ?? []).map((item) => item.slice(1, -1)),
+            ...Object.keys(extra),
+        ]),
+    ];
+
+    const describe = (name: string): string => {
+        const text = extra[name] ?? TEXT_VARS[name];
+        return text ? `{${name}} ${text}` : `{${name}}`;
+    };
+
+    const hint = names.length
+        ? `可用占位符：${names.map(describe).join('；')}`
+        : '这段文案不支持占位符，按原样发送';
+
+    return { key, label, type, default: def, group: '提示文案', hint };
 }
 
 /**
  * 各功能的提示文案参数（WebUI 里按「提示文案」分组展示，默认收起）
  *
- * 占位符：{user} 目标 QQ、{time} 时长、{seconds} 秒数、{clock} 时间点、
- *        {id} 编号、{content} 正文、{group} 群号、{count} 次数、{error} 错误信息
- *
- * 禁言时长排行（sm_stats）另有一组：{rank} 名次、{limit} 显示条数、
- * {who} 群名片（QQ号，没名字时只有号码）、{name} 群名片（可能为空）、
- * {duration} 最长一次的时长（逐级精确，如 1小时2分钟3秒）、{total} 累计被禁言时长
+ * 每个参数支持哪些占位符由 textParam 自动写进 hint（WebUI 里显示为
+ * 「可用占位符：{user} 目标 QQ 号；…」），这里不再维护一份清单。
  */
 export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
     ban: [
@@ -116,7 +167,9 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
             'ban 时长无法解析',
             '格式输错啦！正确格式：ban @用户 时长 单位（秒/分/时/天），中间都有空格哦',
         ),
-        textParam('ban_success', '禁言成功回执', '已成功把用户 {user} 禁言{time}'),
+        textParam('ban_success', '禁言成功回执', '已成功把用户 {user} 禁言{time}', 'text', {
+            time: '时长（这里填的是用户输入的原文，如「5分」）',
+        }),
         textParam('ban_failed', '禁言失败', '禁言失败：{error}'),
         textParam('ban_maybe_failed', '禁言无回执提示', '禁言操作可能失败，请检查机器人权限'),
         textParam('kick_no_target', 'kick 未 @ 用户', '你要踢谁？'),
@@ -146,12 +199,17 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
             '随机禁言成功',
             '已将小杂鱼{user}随机禁言{seconds}秒♥\n乖乖呆在我的小黑屋里面到 {clock}吧！',
             'textarea',
+            { seconds: '本次随机禁言的秒数', clock: '解禁时间点（HH:MM:SS）' },
         ),
         textParam('sm_failed', '随机禁言失败', '禁言失败，你不会认真一点吗？ {error}'),
     ],
     sm_stats: [
         textParam('sm_stats_title', '排行标题', DEFAULT_SM_STATS_TITLE),
-        textParam('sm_stats_line', '排行单行', DEFAULT_SM_STATS_LINE, 'textarea'),
+        textParam('sm_stats_line', '排行单行', DEFAULT_SM_STATS_LINE, 'textarea', {
+            user: 'QQ 号',
+            name: '群名片（可能为空）',
+            seconds: '最长一次的秒数',
+        }),
         textParam('sm_stats_empty', '还没有记录时的提示', DEFAULT_SM_STATS_EMPTY),
     ],
     black: [
@@ -209,7 +267,9 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
         textParam('join_off_echo', '已关闭时提示', '当前群的加群自动审批已经是关闭状态'),
         textParam('join_closed', '关闭成功', '已关闭群 {group} 的加群自动审批'),
         textParam('join_usage', '用法提示', '用法：join open 或 join close'),
-        textParam('ai_fail_notify', 'AI 审批异常私聊通知', DEFAULT_AI_FAIL_NOTIFY, 'textarea'),
+        textParam('ai_fail_notify', 'AI 审批异常私聊通知', DEFAULT_AI_FAIL_NOTIFY, 'textarea', {
+            user: '申请人 QQ 号',
+        }),
     ],
     recall_stats: [
         textParam('recall_on_echo', '已开启时提示', '当前群的撤回消息统计已经是开启状态'),
@@ -375,7 +435,9 @@ export const FEATURES: FeatureMeta[] = [
                 label: '新人进群通知文案',
                 type: 'textarea',
                 default: DEFAULT_NEWBAN_WELCOME,
-                hint: '{time} 会替换为人类可读时长；{image=/assets/tip.png} 会替换为图片',
+                hint:
+                    '可用占位符：{time} 禁言时长（人类可读，如「5分钟」）；' +
+                    '{image=路径} 图片，路径相对插件的 assets 目录（如 /assets/tip.png），取不到会跳过',
                 group: '提示文案',
             },
             {
@@ -383,7 +445,7 @@ export const FEATURES: FeatureMeta[] = [
                 label: '退群重进重新禁言文案',
                 type: 'textarea',
                 default: DEFAULT_NEWBAN_REMUTE,
-                hint: '同上，支持 {time} 与 {image=...}',
+                hint: '同上：支持 {time} 与 {image=路径}',
                 group: '提示文案',
             },
             ...(FEATURE_TEXT_PARAMS.newban ?? []),
@@ -479,6 +541,7 @@ export const FEATURES: FeatureMeta[] = [
                 label: '重复加群拒绝理由',
                 type: 'text',
                 default: '您已加入其它官方群，请勿重复加群！',
+                hint: '这段文案不支持占位符，会按原样作为拒绝理由发给申请人',
                 group: '提示文案',
             },
             {
@@ -486,6 +549,7 @@ export const FEATURES: FeatureMeta[] = [
                 label: '群满拒绝理由',
                 type: 'text',
                 default: '群聊已满，如有需要可以先加入Phira官方QQ频道',
+                hint: '同上，不支持占位符',
                 group: '提示文案',
             },
             ...(FEATURE_TEXT_PARAMS.join_verify ?? []),
