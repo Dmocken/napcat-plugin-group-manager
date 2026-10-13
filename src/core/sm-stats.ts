@@ -7,8 +7,9 @@
  * - 只按 QQ 号聚合，**跨群**累计：不记录群号、配置组，纯粹「谁被禁得最惨」
  * - 数据来源是 group_ban 通知，且只统计 sm / smplus 发起的禁言
  *   （这两类禁言不参与「退群重进重禁」，由 core/ban-records.ts 的标记识别）
- * - 排行榜主看「最长一次的禁言时长」（并列时按累计时长），
- *   同时也存了累计时长与次数，供文案自定义取用
+ * 两处排序口径：
+ *   - 群内 `sm list` / `smplus list`（topSmMuted）：看「最长一次」（谁被随机禁得最狠）
+ *   - 后台看板（listSmStats）：看「累计时长」（谁被禁得最多）
  */
 
 import { readJson, writeJson } from './store';
@@ -71,10 +72,8 @@ export function recordSmMute(userId: number | string, seconds: number): void {
     }
 }
 
-/** 被禁言时长最长的前 limit 名（最长一次降序，并列时按累计时长） */
-export function topSmMuted(limit: number): SmStatRow[] {
-    const max = Math.max(1, Math.floor(limit) || 1);
-
+/** 读盘并规范成列表（过滤掉没有有效记录的条目） */
+function allRows(): SmStatRow[] {
     return Object.entries(loadSmStats())
         .map(([userId, record]) => ({
             userId,
@@ -83,7 +82,39 @@ export function topSmMuted(limit: number): SmStatRow[] {
             longest: Math.max(0, Math.floor(Number(record?.longest) || 0)),
             longestAt: Math.max(0, Math.floor(Number(record?.longest_at) || 0)),
         }))
-        .filter((row) => row.longest > 0)
+        .filter((row) => row.longest > 0);
+}
+
+/**
+ * 后台看板用：全部记录，按**累计时长**降序（并列时比最长一次）。
+ *
+ * 与群内 `sm list` 的口径不同：那边看「最长一次」（谁被随机禁得最狠），
+ * 后台看的是「累计被禁了多久」。
+ */
+export function listSmStats(): SmStatRow[] {
+    return allRows().sort(
+        (a, b) => b.total - a.total || b.longest - a.longest || a.userId.localeCompare(b.userId),
+    );
+}
+
+/** 删除某个用户的统计；返回是否真的删掉了 */
+export function removeSmStat(userId: number | string): boolean {
+    const uid = String(userId).trim();
+    if (!uid) return false;
+
+    const data = loadSmStats();
+    if (!data[uid]) return false;
+
+    delete data[uid];
+    writeJson(DATA_FILE, data);
+    return true;
+}
+
+/** 被禁言时长最长的前 limit 名（最长一次降序，并列时按累计时长；群内 sm list 用） */
+export function topSmMuted(limit: number): SmStatRow[] {
+    const max = Math.max(1, Math.floor(limit) || 1);
+
+    return allRows()
         .sort(
             (a, b) =>
                 b.longest - a.longest || b.total - a.total || a.userId.localeCompare(b.userId),

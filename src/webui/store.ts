@@ -20,6 +20,7 @@ import type {
     MetaResponse,
     RecallRow,
     SendPayload,
+    SmStatRow,
     SendResult,
     StatusInfo,
     ToastItem,
@@ -103,6 +104,10 @@ interface StoreState {
     recallRecords: RecallRow[];
     /** 群数据加载中 */
     groupDataLoading: boolean;
+    /** sm / smplus 禁言统计（跨群按 QQ 聚合，按累计时长降序） */
+    smStats: SmStatRow[];
+    /** 禁言统计加载中 */
+    smStatsLoading: boolean;
 
     page: PageKey;
     setPage: (page: PageKey) => void;
@@ -155,6 +160,10 @@ interface StoreState {
     unbanMember: (groupId: string, userId: string) => Promise<void>;
     /** 清空禁言记录：传群号只清该群，不传全清 */
     clearBanRecordRows: (groupId?: string) => Promise<void>;
+    /** 拉取 sm / smplus 禁言统计（不参与 5s 轮询，数据不会自己走动） */
+    loadSmStats: () => Promise<void>;
+    /** 删除某个用户的禁言统计 */
+    removeSmStat: (userId: string) => Promise<void>;
     /** 把一条禁言记录迁移到另一个群 */
     migrateBanRecord: (groupId: string, userId: string, targetGroupId: string) => Promise<void>;
     /** 把某人的撤回记录迁移到另一个群 */
@@ -246,6 +255,8 @@ export const useStore = create<StoreState>()(
         blackHistory: [],
         recallRecords: [],
         groupDataLoading: false,
+        smStats: [],
+        smStatsLoading: false,
         broadcastDraft: { ...EMPTY_BROADCAST },
         broadcasting: false,
         broadcastResult: null,
@@ -745,6 +756,39 @@ export const useStore = create<StoreState>()(
                 get().toast(`已清空 ${data?.removed ?? 0} 条禁言记录`);
             } catch (error) {
                 get().handleError(error, '清空失败：');
+            }
+        },
+
+        loadSmStats: async () => {
+            set((draft) => {
+                draft.smStatsLoading = true;
+            });
+            try {
+                const data = await request<{ records: SmStatRow[] }>('/data/sm-stats');
+                set((draft) => {
+                    draft.smStats = data?.records ?? [];
+                });
+            } catch (error) {
+                get().handleError(error, '读取禁言统计失败：');
+            } finally {
+                set((draft) => {
+                    draft.smStatsLoading = false;
+                });
+            }
+        },
+
+        removeSmStat: async (userId) => {
+            try {
+                const data = await request<{ records: SmStatRow[] }>('/data/sm-stats/remove', {
+                    method: 'POST',
+                    body: { userId },
+                });
+                set((draft) => {
+                    draft.smStats = data?.records ?? [];
+                });
+                get().toast('已删除该用户的禁言统计');
+            } catch (error) {
+                get().handleError(error, '删除失败：');
             }
         },
 

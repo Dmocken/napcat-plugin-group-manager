@@ -9,6 +9,7 @@ import {
     RefreshCw,
     Search,
     Trash2,
+    Trophy,
     Users,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -30,6 +31,7 @@ import type {
     GroupInfo,
     GroupProfile,
     RecallRow,
+    SmStatRow,
 } from '@/lib/types';
 import { cn, isQq } from '@/lib/utils';
 import { useStore } from '@/store';
@@ -1062,6 +1064,122 @@ function BanRecordsPanel(): React.JSX.Element {
     );
 }
 
+/* ---------------- 禁言统计（sm / smplus） ---------------- */
+
+function SmStatRowView({
+    row,
+    rank,
+    userName,
+    onRemove,
+}: {
+    row: SmStatRow;
+    rank: number;
+    userName: string;
+    onRemove: () => void;
+}): React.JSX.Element {
+    return (
+        <div className="flex items-center gap-3 border-b border-line/70 px-4 py-2 last:border-b-0">
+            <span className="w-[32px] shrink-0 font-mono-num text-[12px] text-subtle">{rank}</span>
+            <IdentityCell
+                kind="user"
+                id={row.userId}
+                name={userName}
+                className="min-w-[168px] flex-1"
+            />
+            {/* 排行按累计时长排，所以这一列用主色，其余是补充信息 */}
+            <span className="w-[120px] shrink-0 text-[12px] whitespace-nowrap text-ink-2">
+                {durationText(row.total)}
+            </span>
+            <span className="w-[64px] shrink-0 font-mono-num text-[12px] whitespace-nowrap text-subtle">
+                {row.count} 次
+            </span>
+            <span className="w-[120px] shrink-0 text-[12px] whitespace-nowrap text-subtle">
+                {durationText(row.longest)}
+            </span>
+            <span className="w-[100px] shrink-0 font-mono-num text-[11px] whitespace-nowrap text-subtle">
+                {timeText(row.longestAt)}
+            </span>
+            <div className="flex w-[72px] shrink-0 items-center justify-end">
+                <Button size="xs" variant="ghost" title="删除这个用户的统计" onClick={onRemove}>
+                    删除
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+function SmStatsPanel(): React.JSX.Element {
+    const rows = useStore((s) => s.smStats);
+    const loading = useStore((s) => s.smStatsLoading);
+    const load = useStore((s) => s.loadSmStats);
+    const remove = useStore((s) => s.removeSmStat);
+    const askConfirm = useStore((s) => s.askConfirm);
+    const { userName } = useNames();
+
+    const removeRow = async (row: SmStatRow): Promise<void> => {
+        const who = `${userName(row.userId) || row.userId}（${row.userId}）`;
+        const ok = await askConfirm(
+            '删除禁言统计',
+            `将删除 ${who} 的 sm / smplus 禁言统计（最长一次 ${durationText(row.longest)}，` +
+                `累计 ${durationText(row.total)} / ${row.count} 次）。` +
+                '删除后他不再出现在排行里，之后再被 sm 会从零重新累计。',
+            'danger',
+        );
+        if (ok) await remove(row.userId);
+    };
+
+    return (
+        <Panel>
+            <PanelHeader
+                icon={<Trophy className="size-4" />}
+                title="禁言统计"
+                description="sm / smplus 把谁禁得最狠：跨群按 QQ 累计，不含群号与配置组。只有在「群配置 → 禁言时长统计」里开了的群才会记录。"
+                actions={
+                    <Button size="sm" loading={loading} onClick={() => void load()}>
+                        <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
+                        刷新
+                    </Button>
+                }
+            />
+
+            {!rows.length ? (
+                <EmptyPanel text="还没有禁言统计 —— 群里用 sm / smplus 禁言之后这里会出现。" />
+            ) : (
+                <div className="flex flex-col">
+                    <div className="flex items-center gap-3 border-b border-line bg-surface/80 px-4 py-1.5 text-[11px] text-subtle">
+                        <span className="w-[32px] shrink-0">#</span>
+                        <span className="min-w-[168px] flex-1">用户</span>
+                        <span className="w-[120px] shrink-0 whitespace-nowrap">累计时长</span>
+                        <span className="w-[64px] shrink-0">次数</span>
+                        <span className="w-[120px] shrink-0 whitespace-nowrap">最长一次</span>
+                        <span className="w-[100px] shrink-0 whitespace-nowrap">那次时间</span>
+                        <span className="w-[72px] shrink-0 text-right">操作</span>
+                    </div>
+
+                    <div className="max-h-[540px] overflow-auto">
+                        {rows.map((row, index) => (
+                            <SmStatRowView
+                                key={row.userId}
+                                row={row}
+                                rank={index + 1}
+                                userName={userName(row.userId)}
+                                onRemove={() => void removeRow(row)}
+                            />
+                        ))}
+                    </div>
+
+                    <SectionHint>
+                        按累计时长从长到短排：「最长一次 / 那次时间」是他被禁得最久的那一次，次数是该群员被
+                        sm / smplus 禁言的总次数。数据跨群累计 —— 同一个人在不同群被禁言会算到一起，
+                        不记录群号与配置组。关掉「禁言时长统计」后新发生的禁言不再入账，已有数据保留；
+                        昵称取自好友列表，取不到就只显示号码。
+                    </SectionHint>
+                </div>
+            )}
+        </Panel>
+    );
+}
+
 /* ---------------- 黑历史 ---------------- */
 
 function BlackRecordDialog({
@@ -1590,14 +1708,16 @@ function RecallRecordsPanel(): React.JSX.Element {
 
 /* ---------------- 页面 ---------------- */
 
-type DataTab = 'ban' | 'black' | 'recall';
+type DataTab = 'ban' | 'sm' | 'black' | 'recall';
 
 /** 群数据：按「配置组 → 群」查看 / 管理插件运行中积累的群相关数据 */
 export function GroupDataPage(): React.JSX.Element {
     const banRecords = useStore((s) => s.banRecords);
     const blackHistory = useStore((s) => s.blackHistory);
     const recallRecords = useStore((s) => s.recallRecords);
+    const smStats = useStore((s) => s.smStats);
     const load = useStore((s) => s.loadGroupData);
+    const loadSmStats = useStore((s) => s.loadSmStats);
     const [tab, setTab] = useState<DataTab>('ban');
 
     // 与概览页日志同样的节奏：进页面拉一次，之后每 5s 静默刷新一次。
@@ -1611,11 +1731,18 @@ export function GroupDataPage(): React.JSX.Element {
         return () => window.clearInterval(id);
     }, [load]);
 
+    // 禁言统计不参与上面的轮询（数据不会自己走动），只在进页面时拉一次，
+    // 这样页签上的条数也是准的；页签里的「刷新」按钮可以再拉。
+    useEffect(() => {
+        void loadSmStats();
+    }, [loadSmStats]);
+
     return (
         <div className="space-y-5">
             <Tabs
                 items={[
                     { key: 'ban', label: '禁言记录', count: banRecords.length },
+                    { key: 'sm', label: '禁言统计', count: smStats.length },
                     { key: 'black', label: '黑历史', count: blackHistory.length },
                     { key: 'recall', label: '撤回记录', count: recallRecords.length },
                 ]}
@@ -1625,6 +1752,7 @@ export function GroupDataPage(): React.JSX.Element {
             />
 
             {tab === 'ban' ? <BanRecordsPanel /> : null}
+            {tab === 'sm' ? <SmStatsPanel /> : null}
             {tab === 'black' ? <BlackHistoryPanel /> : null}
             {tab === 'recall' ? <RecallRecordsPanel /> : null}
         </div>

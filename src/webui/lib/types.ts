@@ -181,6 +181,23 @@ export interface BanRecordRow {
     remute?: boolean;
 }
 
+/**
+ * sm / smplus 禁言统计的一条（GET /data/sm-stats）
+ *
+ * 按 QQ 跨群聚合，不含群号与配置组；只有开了「禁言时长统计」的群才会记录。
+ */
+export interface SmStatRow {
+    userId: string;
+    /** 被禁言次数 */
+    count: number;
+    /** 累计被禁言秒数（看板按它降序） */
+    total: number;
+    /** 最长一次的禁言秒数 */
+    longest: number;
+    /** 最长那一次的时间戳（秒） */
+    longestAt: number;
+}
+
 /** 黑历史列表项（正文已拼成纯文本） */
 export interface BlackRecordRow {
     id: number;

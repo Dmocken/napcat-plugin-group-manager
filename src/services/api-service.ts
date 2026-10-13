@@ -43,6 +43,7 @@ import {
     updateBanDuration,
     updateBlackRecord,
 } from '../core/group-data';
+import { listSmStats, removeSmStat } from '../core/sm-stats';
 import { clearErrorLog, getGlobal, getProfiles, recentErrors, startedAt, stats, updateGlobal, uptimeSeconds, uptimeText } from '../core/state';
 import { getDataDir, listDataFiles, readLogFile } from '../core/store';
 
@@ -564,6 +565,20 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         const groupId = typeof body.groupId === 'string' && body.groupId ? body.groupId : undefined;
         const removed = clearRecallRecords(groupId);
         res.json({ code: 0, data: { records: listRecallRows(), removed } });
+    });
+
+    /* ---------------- 群数据：sm / smplus 禁言统计 ---------------- */
+
+    get('/data/sm-stats', (_req, res) => {
+        res.json({ code: 0, data: { records: listSmStats() } });
+    });
+
+    post('/data/sm-stats/remove', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        if (!removeSmStat(String(body.userId ?? ''))) {
+            return fail(res, 404, '这个用户的禁言统计已经不在了');
+        }
+        res.json({ code: 0, data: { records: listSmStats() } });
     });
 
     /* ---------------- 错误记录 ---------------- */
