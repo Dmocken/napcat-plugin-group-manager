@@ -93,6 +93,9 @@ async function sendSmStatsList(c: CommandContext): Promise<void> {
             paramText(params, 'sm_stats_line', DEFAULT_SM_STATS_LINE, {
                 rank: index + 1,
                 user: row.userId,
+                name: row.name ?? '',
+                // 有群名片就显示「群名片（QQ号）」，没有就只显示号码
+                who: row.name ? `${row.name}（${row.userId}）` : row.userId,
                 duration: formatDurationExact(row.longest),
                 seconds: row.longest,
                 clock: formatTime(row.longestAt),

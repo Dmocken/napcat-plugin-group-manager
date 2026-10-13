@@ -49,7 +49,7 @@ export const DEFAULT_NEWBAN_REMUTE =
 /** sm / smplus 禁言时长排行的默认文案（占位符见 FEATURE_TEXT_PARAMS 的说明） */
 export const DEFAULT_SM_STATS_TITLE = '📊 sm / smplus 被禁言时长排行（前 {limit} 名）';
 export const DEFAULT_SM_STATS_LINE =
-    '{rank}. {user} —— 最长 {duration}（{clock}）· 累计 {total} / {count} 次';
+    '{rank}. {who} —— 最长 {duration}（{clock}）· 累计 {total} / {count} 次';
 export const DEFAULT_SM_STATS_EMPTY = '还没有 sm / smplus 的禁言记录';
 
 /**
@@ -100,6 +100,7 @@ function textParam(key: string, label: string, def: string, type: ParamType = 't
  *        {id} 编号、{content} 正文、{group} 群号、{count} 次数、{error} 错误信息
  *
  * 禁言时长排行（sm_stats）另有一组：{rank} 名次、{limit} 显示条数、
+ * {who} 群名片（QQ号，没名字时只有号码）、{name} 群名片（可能为空）、
  * {duration} 最长一次的时长（逐级精确，如 1小时2分钟3秒）、{total} 累计被禁言时长
  */
 export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {

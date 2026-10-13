@@ -1117,7 +1117,7 @@ function SmStatsPanel(): React.JSX.Element {
     const { userName } = useNames();
 
     const removeRow = async (row: SmStatRow): Promise<void> => {
-        const who = `${userName(row.userId) || row.userId}（${row.userId}）`;
+        const who = `${row.name || userName(row.userId) || row.userId}（${row.userId}）`;
         const ok = await askConfirm(
             '删除禁言统计',
             `将删除 ${who} 的 sm / smplus 禁言统计（最长一次 ${durationText(row.longest)}，` +
@@ -1162,7 +1162,8 @@ function SmStatsPanel(): React.JSX.Element {
                                 key={row.userId}
                                 row={row}
                                 rank={index + 1}
-                                userName={userName(row.userId)}
+                                // 优先用记录里存下的群名片，老记录退回好友列表
+                                userName={row.name || userName(row.userId)}
                                 onRemove={() => void removeRow(row)}
                             />
                         ))}
@@ -1171,8 +1172,8 @@ function SmStatsPanel(): React.JSX.Element {
                     <SectionHint>
                         按累计时长从长到短排：「最长一次 / 那次时间」是他被禁得最久的那一次，次数是该群员被
                         sm / smplus 禁言的总次数。数据跨群累计 —— 同一个人在不同群被禁言会算到一起，
-                        不记录群号与配置组。关掉「禁言时长统计」后新发生的禁言不再入账，已有数据保留；
-                        昵称取自好友列表，取不到就只显示号码。
+                        不记录群号与配置组。关掉「禁言时长统计」后新发生的禁言不再入账，已有数据保留。
+                        昵称取自禁言时反查到的群名片，反查失败的老记录退回好友列表，都没有就只显示号码。
                     </SectionHint>
                 </div>
             )}

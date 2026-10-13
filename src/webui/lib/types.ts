@@ -196,6 +196,8 @@ export interface SmStatRow {
     longest: number;
     /** 最长那一次的时间戳（秒） */
     longestAt: number;
+    /** 禁言时反查到的群名片；没有时前端退回好友列表 / 只显示号码 */
+    name?: string;
 }
 
 /** 黑历史列表项（正文已拼成纯文本） */

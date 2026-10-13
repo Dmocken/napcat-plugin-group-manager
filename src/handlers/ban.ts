@@ -23,7 +23,7 @@ import { resolveNickname } from '../core/nicknames';
 import { isGlobalAdmin } from '../core/permission';
 import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
-import { recordSmMute } from '../core/sm-stats';
+import { recordSmMute, setSmStatName } from '../core/sm-stats';
 import { logDebug, logError } from '../core/state';
 import { paramText } from '../core/texts';
 import { schedule } from '../core/timers';
@@ -260,7 +260,11 @@ registerNotice('group_ban', null, async (ctx) => {
         // 通知事件只带 QQ 号，昵称要反查（有缓存与超时保护）。
         // 不 await：记录先落盘，查到名字再补写，免得接口慢的时候拖住事件处理。
         void resolveNickname(ctx.groupId, ctx.userId).then((name) => {
-            if (name) setBanRecordName(ctx.groupId, ctx.userId, name);
+            if (!name) return;
+            setBanRecordName(ctx.groupId, ctx.userId, name);
+            // 禁言统计里也留一份昵称，看板与 sm list 就能显示名字，
+            // 不必依赖「是不是 bot 好友」；统计没开时这条是空操作
+            if (isSmBan) setSmStatName(ctx.userId, name);
         });
     } else {
         removeBanRecord(ctx.groupId, ctx.userId);
