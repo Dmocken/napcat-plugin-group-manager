@@ -43,7 +43,7 @@ export interface ActivityRecord {
 }
 
 /** 内存与落盘一致的保留条数 */
-const ACTIVITY_KEEP = 50;
+const ACTIVITY_KEEP = 200;
 const ACTIVITY_LOG = 'activity.log';
 /** 单条记录里触发内容 / 发送内容的截断长度 */
 const MAX_TEXT = 300;

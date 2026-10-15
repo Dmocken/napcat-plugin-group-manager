@@ -130,3 +130,37 @@ export async function resolveNickname(
         pending.delete(key);
     }
 }
+
+/**
+ * 只查陌生人信息（get_stranger_info）的反查：用于「人不在群里」的场景
+ * ——加群申请人还没进群、退群 / 被踢的人已离群。
+ *
+ * 这些人调 get_group_member_info 必然失败，且 NapCat 会打一条
+ * 「群(...)成员xxx不存在」的 ERROR 噪音，所以这里只走陌生人接口，
+ * 既能拿到昵称，又不产生报错噪音。缓存与 resolveNickname 共用（key 都是 u_<QQ>）。
+ */
+export async function resolveStrangerNickname(userId: number | string): Promise<string> {
+    const id = String(userId ?? '').trim();
+    if (!id || id === '0') return '';
+
+    const key = `u_${id}`;
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < (hit.name ? NAME_TTL : MISS_TTL)) return hit.name;
+
+    const running = pending.get(key);
+    if (running) return running;
+
+    const task = (async (): Promise<string> => {
+        const name = nameOf(await ask('get_stranger_info', { user_id: id }));
+        if (cache.size >= MAX_ENTRIES) cache.clear();
+        cache.set(key, { name, at: Date.now() });
+        return name;
+    })();
+
+    pending.set(key, task);
+    try {
+        return await task;
+    } finally {
+        pending.delete(key);
+    }
+}

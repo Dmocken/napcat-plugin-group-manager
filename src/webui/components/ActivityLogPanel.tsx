@@ -16,6 +16,9 @@ import type { ActivityRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store';
 
+/** 弹窗分页：每页条数 */
+const PAGE_SIZE = 10;
+
 const SOURCE_TEXT: Record<string, string> = {
     command: '命令',
     event: '事件',
@@ -116,6 +119,7 @@ export function ActivityLogPanel(): React.JSX.Element {
     const clearLog = useStore((s) => s.clearLog);
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [page, setPage] = useState(0);
 
     const nameOf = (groupId: string): string =>
         groups.find((g) => String(g.group_id) === groupId)?.group_name || groupId;
@@ -125,6 +129,12 @@ export function ActivityLogPanel(): React.JSX.Element {
     const inThisRun = bootAt ? activities.filter((r) => r.boot === bootAt).length : activities.length;
     const historyCount = activities.length - inThisRun;
     const abnormal = activities.filter((r) => r.result !== 'ok').length;
+
+    /** 弹窗分页：当前页（数据变化时夹紧，避免停留在已不存在的页） */
+    const total = activities.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages - 1);
+    const pageList = activities.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
     const reload = async (): Promise<void> => {
         setLoading(true);
@@ -138,7 +148,7 @@ export function ActivityLogPanel(): React.JSX.Element {
                 <PanelHeader
                     title="功能调用日志"
                     description={
-                        `来自 data/activity.log，跨重启保留最近 50 条；本次启动 ${inThisRun} 条` +
+                        `来自 data/activity.log，跨重启保留最近 200 条；本次启动 ${inThisRun} 条` +
                         (historyCount > 0 ? `，历史 ${historyCount} 条` : '') +
                         (abnormal > 0 ? `，其中失败 / 拒绝 ${abnormal} 条` : '')
                     }
@@ -174,14 +184,14 @@ export function ActivityLogPanel(): React.JSX.Element {
                 )}
             </Panel>
 
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={(v) => { if (v) setPage(0); setOpen(v); }}>
                 <DialogContent className="max-w-[1200px]" hideClose>
                     <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
                         <div className="min-w-0 flex-1">
                             <DialogTitle>功能调用日志</DialogTitle>
                             <DialogDescription className="mt-1">
                                 共 {activities.length} 条（本次启动 {inThisRun} 条、历史 {historyCount} 条），
-                                最多保留 50 条，超出后自动轮转 activity.log
+                                最多保留 200 条，超出后自动轮转 activity.log
                             </DialogDescription>
                         </div>
                         <Button size="sm" loading={loading} onClick={() => void reload()}>
@@ -196,11 +206,37 @@ export function ActivityLogPanel(): React.JSX.Element {
                                 暂无功能调用记录
                             </p>
                         ) : (
-                            activities.map((record, index) => (
+                            pageList.map((record, index) => (
                                 <Row key={`${record.time}-${index}`} record={record} nameOf={nameOf} />
                             ))
                         )}
                     </div>
+
+                    {total > PAGE_SIZE ? (
+                        <div className="flex items-center justify-between gap-2 border-t border-line px-5 py-2 text-[11px]">
+                            <span className="text-subtle">
+                                第 {safePage + 1} / {totalPages} 页 · 共 {total} 条
+                            </span>
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={safePage === 0}
+                                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                                >
+                                    上一页
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={safePage >= totalPages - 1}
+                                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                                >
+                                    下一页
+                                </Button>
+                            </div>
+                        </div>
+                    ) : null}
 
                     <div className="flex items-center gap-2 border-t border-line px-5 py-3">
                         <Button

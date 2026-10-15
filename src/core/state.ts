@@ -229,7 +229,7 @@ export interface ErrorRecord {
 }
 
 /** 保留条数：内存与落盘一致 */
-const ERROR_KEEP = 50;
+const ERROR_KEEP = 200;
 
 const errorBuffer: ErrorRecord[] = [];
 
@@ -263,7 +263,7 @@ export function stamp(offsetMinutes = 0): string {
     )}:${p(d.getSeconds())}`;
 }
 
-/** 记录一条错误：内存保留最近 50 条，同时写入 data/errors.log */
+/** 记录一条错误：内存保留最近 200 条，同时写入 data/errors.log */
 export function recordError(args: unknown[], context?: ErrorContext): void {
     const ctxInfo = { ...(activeErrorContext ?? {}), ...(context ?? {}) };
     const text = args

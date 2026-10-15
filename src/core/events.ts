@@ -8,7 +8,7 @@
 
 import type { FeatureKey, RawEventLike } from '../types';
 import { beginActivity } from './activity';
-import { resolveNickname, getCachedNickname } from './nicknames';
+import { resolveNickname, resolveStrangerNickname } from './nicknames';
 import { getFeatureSettings } from './profiles';
 import { isPluginEnabled } from './permission';
 import { logError, logDebug, setActiveErrorContext, stats } from './state';
@@ -160,14 +160,15 @@ async function run(
     // 事件通知不带昵称，按需反查（有缓存与超时保护）
     const actorId = context.operatorId || context.userId;
 
-    // 「触发者已经不在群里」的事件跳过 get_group_member_info：
+    // 「触发者已经不在群里」的事件只走陌生人接口（get_stranger_info）：
     //   - 退群 / 被踢（group_decrease）：人已离群
     //   - 加群申请（request:group）：人还没进群
-    // 两条都会让 NapCat 打一条「群(...)成员xxx不存在」的 ERROR 噪音，
-    // 改成只看缓存 —— 之前被禁言过 / 进来时就查到过就有名字，没查到就空着。
+    // 这两条如果调 get_group_member_info 必然失败，NapCat 还会打一条
+    // 「群(...)成员xxx不存在」的 ERROR 噪音；陌生人接口对任何 QQ 都能拿到昵称，
+    // 所以这里用它，既不报错、又能把昵称记进日志（而不是只剩 QQ 号）。
     const userName =
         kind === 'group_decrease' || kind === 'group'
-            ? getCachedNickname(context.groupId, actorId)
+            ? await resolveStrangerNickname(actorId)
             : await resolveNickname(context.groupId, actorId);
 
     stats.eventHandled += 1;

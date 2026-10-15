@@ -16,6 +16,9 @@ import type { ErrorRecord } from '@/lib/types';
 import { cn, copyText, selectForManualCopy } from '@/lib/utils';
 import { useStore } from '@/store';
 
+/** 弹窗分页：每页条数 */
+const PAGE_SIZE = 10;
+
 /** 复制用的完整文本：把界面省略掉的部分补全 */
 function recordText(record: ErrorRecord, groupName: string): string {
     const who = record.userName ? `${record.userName}(${record.userId})` : record.userId;
@@ -116,6 +119,7 @@ export function ErrorLogPanel(): React.JSX.Element {
     const toast = useStore((s) => s.toast);
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [page, setPage] = useState(0);
 
     const nameOf = (groupId: string): string =>
         groups.find((g) => String(g.group_id) === groupId)?.group_name || groupId;
@@ -139,6 +143,12 @@ export function ErrorLogPanel(): React.JSX.Element {
     const inThisRun = bootAt ? errors.filter((r) => r.boot === bootAt).length : errors.length;
     const historyCount = errors.length - inThisRun;
 
+    /** 弹窗分页：当前页（数据变化时夹紧，避免停留在已不存在的页） */
+    const total = errors.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages - 1);
+    const pageList = errors.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
     const reload = async (): Promise<void> => {
         setLoading(true);
         await refreshErrors();
@@ -150,7 +160,7 @@ export function ErrorLogPanel(): React.JSX.Element {
             <Panel>
                 <PanelHeader
                     title="最近异常"
-                    description={`来自 data/errors.log，跨重启保留最近 50 条；本次启动 ${inThisRun} 条` + (historyCount > 0 ? `，历史 ${historyCount} 条` : '')}
+                    description={`来自 data/errors.log，跨重启保留最近 200 条；本次启动 ${inThisRun} 条` + (historyCount > 0 ? `，历史 ${historyCount} 条` : '')}
                     actions={
                         <div className="flex items-center gap-2">
                             <Button size="sm" loading={loading} onClick={() => void reload()}>
@@ -188,14 +198,14 @@ export function ErrorLogPanel(): React.JSX.Element {
                 )}
             </Panel>
 
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={(v) => { if (v) setPage(0); setOpen(v); }}>
                 <DialogContent className="max-w-[1120px]" hideClose>
                     <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
                         <div className="min-w-0 flex-1">
                             <DialogTitle>异常记录</DialogTitle>
                             <DialogDescription className="mt-1">
                                 共 {errors.length} 条（本次启动 {inThisRun} 条、历史 {historyCount} 条），
-                                最多保留 50 条，超出后自动轮转 errors.log
+                                最多保留 200 条，超出后自动轮转 errors.log
                             </DialogDescription>
                         </div>
                         <Button size="sm" loading={loading} onClick={() => void reload()}>
@@ -210,7 +220,7 @@ export function ErrorLogPanel(): React.JSX.Element {
                                 暂无异常记录
                             </p>
                         ) : (
-                            errors.map((record, index) => (
+                            pageList.map((record, index) => (
                                 <Row
                                     key={`${record.time}-${index}`}
                                     record={record}
@@ -221,6 +231,32 @@ export function ErrorLogPanel(): React.JSX.Element {
                             ))
                         )}
                     </div>
+
+                    {total > PAGE_SIZE ? (
+                        <div className="flex items-center justify-between gap-2 border-t border-line px-5 py-2 text-[11px]">
+                            <span className="text-subtle">
+                                第 {safePage + 1} / {totalPages} 页 · 共 {total} 条
+                            </span>
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={safePage === 0}
+                                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                                >
+                                    上一页
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={safePage >= totalPages - 1}
+                                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                                >
+                                    下一页
+                                </Button>
+                            </div>
+                        </div>
+                    ) : null}
 
                     <div className="flex items-center gap-2 border-t border-line px-5 py-3">
                         <Button

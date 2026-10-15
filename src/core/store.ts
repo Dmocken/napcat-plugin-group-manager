@@ -44,10 +44,10 @@ export function writeJson(name: string, data: unknown): void {
 
 const LOG_MAX_BYTES = 256 * 1024;
 
-/** 日志文件轮转：超过上限时只保留最近 100 行 */
+/** 日志文件轮转：超过上限时只保留最近 200 行（与 ERROR_KEEP / ACTIVITY_KEEP 对齐） */
 function rotateLog(file: string): void {
     if (!fs.existsSync(file) || fs.statSync(file).size <= LOG_MAX_BYTES) return;
-    const kept = fs.readFileSync(file, 'utf-8').split('\n').slice(-100).join('\n');
+    const kept = fs.readFileSync(file, 'utf-8').split('\n').slice(-200).join('\n');
     fs.writeFileSync(file, `${kept}\n`, 'utf-8');
 }
 
