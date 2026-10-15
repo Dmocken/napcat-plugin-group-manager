@@ -14,7 +14,7 @@ import { DEFAULT_AI_FAIL_NOTIFY, DEFAULT_AI_PROMPT, JUDGE_MODES, type JudgeMode 
 import { callAiChat, parseAiVerdict } from '../services/ai-judge';
 import { checkDuplicate } from '../services/dup-check';
 import { resolveWords, judgeAnswer } from '../services/text-judge';
-import { registerRequest } from '../core/events';
+import { isRequestHandled, registerRequest } from '../core/events';
 import { callAction, sendGroup, sendPrivate } from '../core/messages';
 import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
 import { registerCommand } from '../core/router';
@@ -85,33 +85,109 @@ registerCommand({
     },
 });
 
-/** AI 判断失败：私聊所有 Bot 管理员，本次申请不自动审批（保持待处理） */
+/**
+ * 解析 AI 失败通知对象（参数 ai_fail_targets）。
+ *
+ * 存储结构 { bot?: Bot管理QQ[], 群号?: 群主/管理员的QQ[] }：
+ *   - bot 勾了具体的人 → 只通知这些人（不在 Bot 管理员名单里的忽略，防止配置乱写乱发）
+ *   - bot 没勾 / 参数缺失 → 通知全部 Bot 管理员（与旧版行为一致）
+ *   - 失败发生的群勾了人 → 实时拉成员列表，只通知当前仍是群主 / 管理员的那些勾选对象
+ *     （有人被撤职 / 退群后自动失效，不用回来改配置）
+ * 拉不到成员列表时只跳过该群的勾选目标，Bot 主人目标不受影响。
+ */
+/** 导出仅供单元验证；正常流程走 notifyAiFailure */
+export async function resolveNotifyTargets(
+    params: Record<string, unknown>,
+    groupId: number,
+    selfId: string,
+): Promise<string[]> {
+    const admins = (getGlobal().global_admins ?? []).map(String);
+    const raw = params?.ai_fail_targets;
+    const config =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+            ? (raw as Record<string, unknown>)
+            : {};
+
+    const result = new Set<string>();
+    const add = (uid: number | string): void => {
+        const id = String(uid).trim();
+        if (id && id !== selfId) result.add(id);
+    };
+
+    /* 1. Bot 主人组：勾了具体的人只通知他们，没勾 = 全部 */
+    const botRaw = config.bot;
+    const botList = (Array.isArray(botRaw) ? botRaw : [])
+        .map((q) => String(q).trim())
+        .filter((q) => admins.includes(q));
+    if (botList.length) botList.forEach(add);
+    else admins.forEach(add);
+
+    /* 2. 失败发生的那个群：勾的是具体的群主 / 管理员 QQ，只通知当前仍在管理位置上的人 */
+    const groupRaw = config[String(groupId)];
+    const checked = (Array.isArray(groupRaw) ? groupRaw : []).map((q) => String(q).trim());
+    if (checked.length) {
+        try {
+            const members = await callAction<{ role?: string; user_id?: number | string }[]>(
+                'get_group_member_list',
+                { group_id: String(groupId) },
+            );
+            const managers = new Set(
+                (Array.isArray(members) ? members : [])
+                    .filter((m) => ['owner', 'admin'].includes(String(m?.role ?? '')))
+                    .map((m) => String(m?.user_id ?? '')),
+            );
+            checked.forEach((qq) => {
+                if (managers.has(qq)) add(qq);
+            });
+        } catch (e) {
+            logWarn(
+                `[群管助手] AI 失败通知：拉取群 ${groupId} 成员列表失败，该群勾选的管理目标跳过:`,
+                e,
+            );
+        }
+    }
+
+    return [...result];
+}
+
+/** AI 判断失败：按配置私聊通知（默认全部 Bot 管理员），本次申请不自动审批（保持待处理） */
 async function notifyAiFailure(
     params: Record<string, unknown>,
-    vars: { group: number; user: number; question: string; answer: string; error: string },
+    groupId: number,
+    selfId: string,
+    vars: { user: number; question: string; answer: string; error: string },
 ): Promise<void> {
-    const admins = getGlobal().global_admins ?? [];
-    if (!admins.length) {
-        logWarn('[群管助手] AI 判断失败，但没有配置 Bot 管理员，无法私聊通知');
+    const targets = await resolveNotifyTargets(params, groupId, selfId);
+    if (!targets.length) {
+        logWarn('[群管助手] AI 判断失败，但没有可通知的对象（Bot 管理员未配置且群主 / 群管理员不可用）');
         return;
     }
 
     const message = paramText(params, 'ai_fail_notify', DEFAULT_AI_FAIL_NOTIFY, {
-        group: vars.group,
+        group: groupId,
         user: vars.user,
         question: vars.question || '(未提供问题)',
         answer: vars.answer || '(未提供答案)',
         error: vars.error,
     });
 
-    for (const admin of admins) {
-        await sendPrivate(admin, message);
+    logDebug(
+        `[群管助手] AI 判断失败通知：私聊 ${targets.length} 人（${targets.join(', ')}）`,
+    );
+    for (const target of targets) {
+        await sendPrivate(target, message);
     }
 }
 
 registerRequest('group', 'join_verify', async (ctx) => {
     const event = ctx.event;
     const raw = event as unknown as Record<string, any>;
+
+    // 拉黑已经拒绝过这个申请 → 不再审批（一个申请只允许响应一次）
+    if (isRequestHandled(event)) {
+        logDebug('[群管助手] 加群审核：该申请已被拉黑拦截，跳过');
+        return;
+    }
 
     /** 取第一个非空字段（不同 NapCat 版本的字段名可能是下划线或驼峰） */
     const pick = (keys: string[]): unknown => {
@@ -144,6 +220,8 @@ registerRequest('group', 'join_verify', async (ctx) => {
     const groupId = Number(groupIdRaw ?? 0);
     const userId = Number(userIdRaw ?? 0);
     const flag = flagRaw === undefined ? '' : String(flagRaw);
+    // 机器人自己的 QQ：通知目标解析时要剔除（bot 自己是群管理员时不用自己通知自己）
+    const selfId = String(pick(['self_id', 'selfId']) ?? ctx.event.self_id ?? 0);
 
     if (!groupId || !userId) {
         logError(
@@ -273,8 +351,7 @@ registerRequest('group', 'join_verify', async (ctx) => {
             logError(
                 `[群管助手] 加群审核：AI 判断失败（${failReason}），已降级为词表判断（结果=${approved}）并通知管理员`,
             );
-            await notifyAiFailure(params, {
-                group: groupId,
+            await notifyAiFailure(params, groupId, selfId, {
                 user: userId,
                 question: questionText,
                 answer: answerText,
@@ -283,8 +360,7 @@ registerRequest('group', 'join_verify', async (ctx) => {
         } else {
             //纯 AI 模式：保持待处理，等管理员手动处理
             logError(`[群管助手] 加群审核：AI 判断失败（${failReason}），已通知管理员手动处理`);
-            await notifyAiFailure(params, {
-                group: groupId,
+            await notifyAiFailure(params, groupId, selfId, {
                 user: userId,
                 question: questionText,
                 answer: answerText,

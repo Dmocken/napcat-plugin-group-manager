@@ -34,6 +34,27 @@ function keyOf(groupId: number | string, userId: string): string {
     return group ? `${group}_${userId}` : `u_${userId}`;
 }
 
+/**
+ * 只读昵称缓存，不发任何请求；命中「查不到」的短缓存也照样返回空串。
+ *
+ * 给「人已经不在群里」的事件用：退群 / 被踢之后、调 get_group_member_info
+ * 必然失败（NapCat 还会打一条「群(...)成员xxx不存在」的 ERROR 噪音），
+ * 所以先用这条接口看看缓存里有没有之前查到的名字（之前被禁言过就有），
+ * 没有就空着，活动日志只会显示 QQ 号。
+ */
+export function getCachedNickname(
+    groupId: number | string,
+    userId: number | string,
+): string {
+    const id = String(userId ?? '').trim();
+    if (!id || id === '0') return '';
+
+    const hit = cache.get(keyOf(groupId, id));
+    if (!hit) return '';
+    // 命中「查不到」也直接返回空串（保持与 resolveNickname 一致：不区分两种"空"）
+    return hit.name;
+}
+
 function withTimeout(ms: number): Promise<null> {
     return new Promise((resolve) => {
         setTimeout(() => resolve(null), ms);

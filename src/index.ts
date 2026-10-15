@@ -29,6 +29,7 @@ import type { GlobalConfig, RawEventLike } from './types';
 // 副作用导入：在模块加载时完成命令 / 事件注册
 import './handlers/ban';
 import './handlers/black';
+import './handlers/blacklist';
 import './handlers/check-silent';
 import './handlers/join-verify';
 import './handlers/newban';

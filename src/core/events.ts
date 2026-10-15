@@ -8,7 +8,7 @@
 
 import type { FeatureKey, RawEventLike } from '../types';
 import { beginActivity } from './activity';
-import { resolveNickname } from './nicknames';
+import { resolveNickname, getCachedNickname } from './nicknames';
 import { getFeatureSettings } from './profiles';
 import { isPluginEnabled } from './permission';
 import { logError, logDebug, setActiveErrorContext, stats } from './state';
@@ -34,6 +34,25 @@ interface Registered<T> {
 
 const noticeHandlers: Registered<string>[] = [];
 const requestHandlers: Registered<string>[] = [];
+
+/**
+ * 已经给出审批结果的加群申请（一个申请只允许一个处理器响应）。
+ *
+ * 「拉黑」与「加群审核」都注册在 request/group 上：拉黑命中时必须先拒绝并短路，
+ * 否则后面的加群审核会对同一个 flag 再审批一次，行为取决于 NapCat 以哪次为准。
+ * 用事件对象本身做 key（WeakSet），同一个事件在本次进程里只会被标记一次。
+ */
+const handledRequests = new WeakSet<RawEventLike>();
+
+/** 这个加群申请是否已经被别的处理器响应过 */
+export function isRequestHandled(event: RawEventLike): boolean {
+    return handledRequests.has(event);
+}
+
+/** 标记「已经响应过这个申请」，后续处理器应直接跳过 */
+export function markRequestHandled(event: RawEventLike): void {
+    handledRequests.add(event);
+}
 
 export function registerNotice(
     noticeType: string,
@@ -140,7 +159,16 @@ async function run(
 
     // 事件通知不带昵称，按需反查（有缓存与超时保护）
     const actorId = context.operatorId || context.userId;
-    const userName = await resolveNickname(context.groupId, actorId);
+
+    // 「触发者已经不在群里」的事件跳过 get_group_member_info：
+    //   - 退群 / 被踢（group_decrease）：人已离群
+    //   - 加群申请（request:group）：人还没进群
+    // 两条都会让 NapCat 打一条「群(...)成员xxx不存在」的 ERROR 噪音，
+    // 改成只看缓存 —— 之前被禁言过 / 进来时就查到过就有名字，没查到就空着。
+    const userName =
+        kind === 'group_decrease' || kind === 'group'
+            ? getCachedNickname(context.groupId, actorId)
+            : await resolveNickname(context.groupId, actorId);
 
     stats.eventHandled += 1;
 

@@ -132,3 +132,11 @@ export function paramNumberList(params: Record<string, unknown>, key: string, de
     const list = v.map((x) => Number(x)).filter((x) => Number.isFinite(x));
     return list.length ? list : def;
 }
+
+/** 从 settings.params 取字符串数组（元素逐个转字符串、去空；空数组 / 非数组回退默认） */
+export function paramStringList(params: Record<string, unknown>, key: string, def: string[]): string[] {
+    const v = params?.[key];
+    if (!Array.isArray(v)) return def;
+    const list = v.map((x) => String(x).trim()).filter(Boolean);
+    return list.length ? list : def;
+}

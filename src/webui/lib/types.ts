@@ -11,7 +11,8 @@ export type ParamType =
     | 'numberlist'
     | 'wordlists'
     | 'grouplist'
-    | 'select';
+    | 'select'
+    | 'cascade';
 
 export interface WordListMeta {
     key: string;
@@ -208,6 +209,42 @@ export interface SmStatRow {
     longestAt: number;
     /** 禁言时反查到的群名片；没有时前端退回好友列表 / 只显示号码 */
     name?: string;
+}
+
+/**
+ * 拉黑名单的一条（GET /data/blacklist）
+ *
+ * 按配置组聚合：在组内任何一群拉黑，组内所有群的入群申请都会被拦截。
+ */
+export interface BlacklistRow {
+    /** 所属配置组 id；名称用群配置里的 label 反查 */
+    profileId: string;
+    userId: string;
+    /** 拉黑时间戳（秒） */
+    at: number;
+    /** 执行拉黑的人 */
+    by: number;
+    /** 拉黑时反查到的昵称；没有时前端退回好友列表 / 只显示号码 */
+    name?: string;
+    /** 拉黑原因；没有时为空 */
+    reason?: string;
+}
+
+/** 群主 / 管理员（GET /group/managers，AI 失败通知对象级联菜单的右侧列表用） */
+export interface ManagerUser {
+    userId: string;
+    /** 群名片，没有时为昵称；再没有就只显示号码 */
+    name?: string;
+}
+
+export interface GroupManagers {
+    groupId: string;
+    /** 群主；取不到时为 null */
+    owner: ManagerUser | null;
+    /** 管理员们 */
+    admins: ManagerUser[];
+    /** 拉取失败的原因（bot 不在群里 / 接口异常）；有值时 owner / admins 为空 */
+    error?: string;
 }
 
 /** 黑历史列表项（正文已拼成纯文本） */

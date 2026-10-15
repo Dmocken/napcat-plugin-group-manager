@@ -44,6 +44,7 @@ import {
     updateBlackRecord,
 } from '../core/group-data';
 import { listSmStats, removeSmStat } from '../core/sm-stats';
+import { listBlacklistRows, removeFromBlacklist } from '../core/blacklist';
 import { clearErrorLog, getGlobal, getProfiles, recentErrors, startedAt, stats, updateGlobal, uptimeSeconds, uptimeText } from '../core/state';
 import { getDataDir, listDataFiles, readLogFile } from '../core/store';
 
@@ -579,6 +580,57 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             return fail(res, 404, '这个用户的禁言统计已经不在了');
         }
         res.json({ code: 0, data: { records: listSmStats() } });
+    });
+
+    /* ---------------- 群数据：拉黑名单 ---------------- */
+
+    get('/data/blacklist', (_req, res) => {
+        res.json({ code: 0, data: { records: listBlacklistRows() } });
+    });
+
+    /* ---------------- 群信息 ---------------- */
+
+    /**
+     * 某个群的群主与管理员（AI 失败通知对象级联菜单的右侧列表用）。
+     *
+     * name 取群名片，没有就用昵称；bot 不在群里 / 拉取失败时返回空结果并带
+     * error 说明，前端据此提示，而不是让请求挂掉。
+     */
+    get('/group/managers', async (req, res) => {
+        const groupId = String(req.query.groupId ?? '').trim();
+        if (!/^\d{5,12}$/.test(groupId)) return fail(res, 400, '群号格式不正确');
+
+        const empty = { groupId, owner: null, admins: [] };
+        try {
+            const members = await callAction<
+                { role?: string; user_id?: number | string; card?: string; nickname?: string }[]
+            >('get_group_member_list', { group_id: groupId });
+            const toUser = (m: { user_id?: number | string; card?: string; nickname?: string }) => {
+                const name = String(m?.card || m?.nickname || '').trim();
+                return {
+                    userId: String(m?.user_id ?? ''),
+                    ...(name ? { name } : {}),
+                };
+            };
+            const list = Array.isArray(members) ? members : [];
+            const owner = list.find((m) => String(m?.role ?? '') === 'owner');
+            const admins = list
+                .filter((m) => String(m?.role ?? '') === 'admin')
+                .map(toUser);
+            res.json({ code: 0, data: { groupId, ...(owner ? { owner: toUser(owner) } : { owner: null }), admins } });
+        } catch (e) {
+            res.json({ code: 0, data: { ...empty, error: e instanceof Error ? e.message : String(e) } });
+        }
+    });
+
+    post('/data/blacklist/remove', (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const profileId = String(body.profileId ?? '').trim();
+        if (!profileId) return fail(res, 400, '缺少配置组 id');
+        if (!removeFromBlacklist(profileId, String(body.userId ?? ''))) {
+            return fail(res, 404, '这个用户的拉黑记录已经不在了');
+        }
+        res.json({ code: 0, data: { records: listBlacklistRows() } });
     });
 
     /* ---------------- 错误记录 ---------------- */

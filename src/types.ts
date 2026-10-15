@@ -8,6 +8,7 @@ export type FeatureKey =
     | 'random_ban'
     | 'sm_stats'
     | 'black'
+    | 'blacklist'
     | 'newban'
     | 'check_silent'
     | 'join_verify'
@@ -68,7 +69,8 @@ export type ParamType =
     | 'numberlist'
     | 'wordlists'
     | 'grouplist'
-    | 'select';
+    | 'select'
+    | 'cascade';
 
 export interface WordListMeta {
     key: string;
@@ -106,8 +108,16 @@ export interface ParamMeta {
     group?: string;
     /** type = wordlists 时，子词表定义 */
     subKeys?: WordListMeta[];
-    /** type = select 时，候选项 */
+    /** type = select / cascade 时，候选项 */
     options?: ParamOption[];
+    /**
+     * type = cascade 时的存储说明（触发器 + 下拉级联弹层）：
+     * 存储值为 Record<'bot' | 群号, string[]> ——
+     *   'bot'        Bot 主人组：值 = 具体 Bot 管理 QQ 列表；空 / 缺省 = 通知全部
+     *   群号         该群勾选的通知对象 = 该群群主 / 管理员的 QQ 列表；空 = 该群失败只通知 Bot 主人
+     * 弹层左侧 = 「Bot 主人」+ 本配置组绑定的群（WebUI 从群配置现取）；
+     * 右侧 = 勾选对象：Bot 组为 Bot 管理员名单，群为实时拉取的群主 / 管理员（接口 GET /group/managers）。
+     */
     /**
      * 渲染位置：'permission' 表示该参数不是普通参数，
      * 而是和「允许群主/ 管理员」「成员名单」放在一起（WebUI 的「使用权限」区）

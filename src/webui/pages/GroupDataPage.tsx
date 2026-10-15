@@ -8,6 +8,7 @@ import {
     Plus,
     RefreshCw,
     Search,
+    ShieldBan,
     Trash2,
     Trophy,
     Users,
@@ -28,6 +29,7 @@ import { useServerNow } from '@/lib/server-clock';
 import type {
     BanRecordRow,
     BlackRecordRow,
+    BlacklistRow,
     GroupInfo,
     GroupProfile,
     RecallRow,
@@ -1182,6 +1184,169 @@ function SmStatsPanel(): React.JSX.Element {
     );
 }
 
+/* ---------------- 拉黑名单 ---------------- */
+
+function BlacklistRowView({
+    row,
+    userName,
+    onRemove,
+}: {
+    row: BlacklistRow;
+    userName: string;
+    onRemove: () => void;
+}): React.JSX.Element {
+    return (
+        <div className="flex items-center gap-3 border-b border-line/70 px-4 py-2 last:border-b-0">
+            <IdentityCell
+                kind="user"
+                id={row.userId}
+                // 优先用拉黑时反查到的群名片，老记录退回好友列表
+                name={row.name || userName}
+                className="min-w-[168px] flex-1"
+            />
+            <span className="w-[140px] shrink-0 text-[12px] whitespace-nowrap text-subtle">
+                {timeText(row.at)}
+            </span>
+            <span className="w-[110px] shrink-0 font-mono-num text-[11px] whitespace-nowrap text-subtle">
+                {row.by || '—'}
+            </span>
+            <span className="min-w-[120px] flex-1 truncate text-[12px] whitespace-nowrap text-ink-2">
+                {row.reason || '—'}
+            </span>
+            <div className="flex w-[72px] shrink-0 items-center justify-end">
+                <Button size="xs" variant="ghost" title="解除拉黑" onClick={onRemove}>
+                    解除
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+function BlacklistPanel(): React.JSX.Element {
+    const rows = useStore((s) => s.blacklist);
+    const loading = useStore((s) => s.blacklistLoading);
+    const load = useStore((s) => s.loadBlacklist);
+    const removeRow = useStore((s) => s.removeBlacklistRow);
+    const askConfirm = useStore((s) => s.askConfirm);
+    const { profiles, userName } = useNames();
+
+    const [selected, setSelected] = useState('');
+
+    // 左栏按「配置组」分层（拉黑是配置组级的，没有按群的计数），
+    // 用 directGroupId 承载配置组 id —— DataTree 对「没有子节点的段」就是整段可点
+    const sections = useMemo<TreeSection[]>(() => {
+        const knownIds = new Set(profiles.map((p) => p.id));
+        const list: TreeSection[] = profiles
+            .map((profile) => ({ profile, own: rows.filter((row) => row.profileId === profile.id) }))
+            .filter((item) => item.own.length > 0)
+            .map((item) => ({
+                key: item.profile.id,
+                label: item.profile.label,
+                count: item.own.length,
+                meta: `${item.profile.group_ids.length} 群`,
+                groups: [],
+                directGroupId: item.profile.id,
+            }));
+
+        // 配置组已经被删掉的孤儿记录（例如整条群配置被删了），单独归一段
+        const orphanCount = rows.filter((row) => !knownIds.has(row.profileId)).length;
+        if (orphanCount) {
+            list.push({
+                key: '__orphan__',
+                label: '已删除的配置组',
+                count: orphanCount,
+                groups: [],
+                directGroupId: '__orphan__',
+            });
+        }
+        return list;
+    }, [rows, profiles]);
+
+    const active = pickActive(sections, selected);
+    const activeProfile = profiles.find((p) => p.id === active);
+    const activeRows = rows.filter((row) =>
+        active === '__orphan__'
+            ? !profiles.some((p) => p.id === row.profileId)
+            : row.profileId === active,
+    );
+
+    const remove = async (row: BlacklistRow): Promise<void> => {
+        const who = `${row.name || userName(row.userId) || row.userId}（${row.userId}）`;
+        const ok = await askConfirm(
+            '解除拉黑',
+            `将解除 ${who} 在配置组「${activeProfile?.label ?? row.profileId}」下的拉黑。` +
+                '解除后他可以重新申请加入该配置组下的所有群。',
+            'danger',
+        );
+        if (ok) await removeRow(row.profileId, row.userId);
+    };
+
+    return (
+        <Panel>
+            <PanelHeader
+                icon={<ShieldBan className="size-4" />}
+                title="拉黑名单"
+                description="管理员 / Bot 主用 black @用户 或 black QQ号 拉黑的人；拉黑是配置组级的 —— 组内所有群的入群申请（含被邀请）都会被拦截。"
+                actions={
+                    <Button size="sm" loading={loading} onClick={() => void load()}>
+                        <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
+                        刷新
+                    </Button>
+                }
+            />
+
+            {!rows.length ? (
+                <EmptyPanel text="还没有拉黑记录 —— 在群里发送 /black @用户 即可拉黑。" />
+            ) : (
+                <div className="flex min-h-[440px]">
+                    <DataTree
+                        sections={sections}
+                        value={active}
+                        onChange={setSelected}
+                        groupName={() => ''}
+                        unit="人"
+                    />
+
+                    <div className="flex min-w-0 flex-1 flex-col">
+                        <div className="flex items-center gap-3 border-b border-line bg-surface-2/60 px-4 py-2.5">
+                            <IdentityCell
+                                kind="group"
+                                id={active === '__orphan__' ? '' : active}
+                                name={
+                                    activeProfile
+                                        ? `${activeProfile.label}（${activeProfile.group_ids.length} 群）`
+                                        : '已删除的配置组'
+                                }
+                            />
+                            <span className="ml-auto shrink-0 text-[11px] text-subtle">
+                                {activeRows.length} 人
+                            </span>
+                        </div>
+
+                        <div className="max-h-[540px] overflow-auto">
+                            {activeRows.map((row) => (
+                                <BlacklistRowView
+                                    key={`${row.profileId}-${row.userId}`}
+                                    row={row}
+                                    userName={userName(row.userId)}
+                                    onRemove={() => void remove(row)}
+                                />
+                            ))}
+                        </div>
+
+                        <SectionHint>
+                            拉黑时间 / 操作人 / 原因都来自群里执行 black 命令的那一刻；昵称是当时反查的，
+                            反查失败的老记录只显示号码。解除拉黑只影响入群申请 ——
+                            已经在群里的成员不会被踢，要踢请用 kick。拦截是否生效还要看该群是否开启了
+                            「拉黑」功能（群配置里），未开启时名单仍会记录但不拦截。
+                        </SectionHint>
+                    </div>
+                </div>
+            )}
+        </Panel>
+    );
+}
+
 /* ---------------- 黑历史 ---------------- */
 
 function BlackRecordDialog({
@@ -1710,7 +1875,7 @@ function RecallRecordsPanel(): React.JSX.Element {
 
 /* ---------------- 页面 ---------------- */
 
-type DataTab = 'ban' | 'sm' | 'black' | 'recall';
+type DataTab = 'ban' | 'sm' | 'black' | 'blacklist' | 'recall';
 
 /** 群数据：按「配置组 → 群」查看 / 管理插件运行中积累的群相关数据 */
 export function GroupDataPage(): React.JSX.Element {
@@ -1718,8 +1883,10 @@ export function GroupDataPage(): React.JSX.Element {
     const blackHistory = useStore((s) => s.blackHistory);
     const recallRecords = useStore((s) => s.recallRecords);
     const smStats = useStore((s) => s.smStats);
+    const blacklist = useStore((s) => s.blacklist);
     const load = useStore((s) => s.loadGroupData);
     const loadSmStats = useStore((s) => s.loadSmStats);
+    const loadBlacklist = useStore((s) => s.loadBlacklist);
     const [tab, setTab] = useState<DataTab>('ban');
 
     // 与概览页日志同样的节奏：进页面拉一次，之后每 5s 静默刷新一次。
@@ -1739,6 +1906,11 @@ export function GroupDataPage(): React.JSX.Element {
         void loadSmStats();
     }, [loadSmStats]);
 
+    // 拉黑名单同理：只有群里执行 black / unblack 才会变，进页面拉一次即可
+    useEffect(() => {
+        void loadBlacklist();
+    }, [loadBlacklist]);
+
     return (
         <div className="space-y-5">
             <Tabs
@@ -1746,6 +1918,7 @@ export function GroupDataPage(): React.JSX.Element {
                     { key: 'ban', label: '禁言记录', count: banRecords.length },
                     { key: 'sm', label: '禁言统计', count: smStats.length },
                     { key: 'black', label: '黑历史', count: blackHistory.length },
+                    { key: 'blacklist', label: '拉黑名单', count: blacklist.length },
                     { key: 'recall', label: '撤回记录', count: recallRecords.length },
                 ]}
                 value={tab}
@@ -1756,6 +1929,7 @@ export function GroupDataPage(): React.JSX.Element {
             {tab === 'ban' ? <BanRecordsPanel /> : null}
             {tab === 'sm' ? <SmStatsPanel /> : null}
             {tab === 'black' ? <BlackHistoryPanel /> : null}
+            {tab === 'blacklist' ? <BlacklistPanel /> : null}
             {tab === 'recall' ? <RecallRecordsPanel /> : null}
         </div>
     );

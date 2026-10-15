@@ -24,6 +24,7 @@ export const FEATURE_KEYS: FeatureKey[] = [
     'random_ban',
     'sm_stats',
     'black',
+    'blacklist',
     'newban',
     'check_silent',
     'join_verify',
@@ -113,6 +114,7 @@ const TEXT_VARS: Record<string, string> = {
     question: '入群问题',
     answer: '申请人的回答',
     error: '错误信息',
+    profile: '配置组名',
 };
 
 /**
@@ -227,6 +229,36 @@ export const FEATURE_TEXT_PARAMS: Record<string, ParamMeta[]> = {
         textParam('black_del_bad_id', '删除编号非法', '我数数是用的数字数的！'),
         textParam('black_del_not_found', '删除的编号不存在', '我这儿都没有编号为 {id} 的黑历史啊！'),
         textParam('black_deleted', '删除成功', '我忘掉编号为 {id} 的黑历史了！'),
+    ],
+    blacklist: [
+        textParam(
+            'blacklist_added',
+            '拉黑成功',
+            '已将 {who} 加入配置组「{profile}」的拉黑名单，入群申请一律拦截',
+        ),
+        textParam(
+            'blacklist_exists',
+            '重复拉黑',
+            '{who} 已经在配置组「{profile}」的拉黑名单里了',
+        ),
+        textParam(
+            'blacklist_removed',
+            '解除拉黑',
+            '已将 {who} 移出配置组「{profile}」的拉黑名单',
+        ),
+        textParam('blacklist_not_found', '解除时不在名单', '{who} 不在配置组的拉黑名单里'),
+        textParam('blacklist_no_target', '未指定目标', '要拉黑谁？@ 一下或直接给 QQ 号'),
+        textParam('blacklist_bad_id', 'QQ 号格式不正确', '这 QQ 号格式不对啊！'),
+        textParam(
+            'blacklist_no_profile',
+            '本群没有群配置',
+            '本群还没有群配置，请先在 WebUI 的「群配置」里绑定',
+        ),
+        textParam(
+            'blacklist_reject_reason',
+            '拦截入群申请的理由',
+            '你已被列入本群管的拉黑名单，如有疑问请联系管理员',
+        ),
     ],
     newban: [
         textParam('newban_on_echo', '已开启时提示', '当前群的新人禁言已经是开启状态'),
@@ -358,6 +390,19 @@ export const AI_PARAMS: ParamMeta[] = [
         group: 'AI 判断',
         hint: '调用 AI 接口的等待上限，超时按「AI 失败」处理（失败后的行为由「审核方式」决定）',
     },
+    {
+        key: 'ai_fail_targets',
+        label: 'AI 失败通知对象',
+        type: 'cascade',
+        default: {},
+        group: 'AI 判断',
+        hint:
+            '按群分别勾选 AI 判断失败时私聊通知谁。' +
+            '左侧选「Bot 主人」→ 右侧勾具体通知哪几位（不勾 = 通知全部）；' +
+            '左侧选某个群 → 右侧列出该群的群主与管理员，勾选具体的人。' +
+            '某群失败时：通知该群勾选的人 + Bot 主人组勾选的人；' +
+            '被撤职 / 退群的勾选对象会自动失效，不用回来改配置。',
+    },
 ];
 
 /** 功能元信息（WebUI 依据此表渲染） */
@@ -449,6 +494,17 @@ export const FEATURES: FeatureMeta[] = [
         block: false,
         implemented: true,
         params: [...(FEATURE_TEXT_PARAMS.black ?? [])],
+    },
+    {
+        key: 'blacklist',
+        label: '拉黑',
+        usage:
+            'black @用户 / black QQ号 [原因] — 拉黑（配置组内所有群的入群申请都会被拦截）\n' +
+            'unblack @用户 / unblack QQ号 — 解除拉黑\n' +
+            '仅管理员 / Bot 主可用；名单可在 WebUI「群数据 → 拉黑名单」查看',
+        block: true,
+        implemented: true,
+        params: [...(FEATURE_TEXT_PARAMS.blacklist ?? [])],
     },
     {
         key: 'newban',

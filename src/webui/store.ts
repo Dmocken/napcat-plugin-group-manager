@@ -9,7 +9,9 @@ import type {
     ActivityRecord,
     BanRecordRow,
     BlackRecordRow,
+    BlacklistRow,
     DupExportResult,
+    GroupManagers,
     DupSnapshotInfo,
     ErrorRecord,
     FeatureSettings,
@@ -108,6 +110,12 @@ interface StoreState {
     smStats: SmStatRow[];
     /** 禁言统计加载中 */
     smStatsLoading: boolean;
+    /** 拉黑名单（按配置组聚合） */
+    blacklist: BlacklistRow[];
+    /** 拉黑名单加载中 */
+    blacklistLoading: boolean;
+    /** 群主 / 管理员缓存：群号 → 数据（进过一次级联菜单就会缓存） */
+    groupManagers: Record<string, GroupManagers>;
 
     page: PageKey;
     setPage: (page: PageKey) => void;
@@ -177,6 +185,12 @@ interface StoreState {
     ) => Promise<void>;
     /** 按编号删除黑历史 */
     removeBlackRecords: (ids: number[]) => Promise<void>;
+    /** 拉取拉黑名单（不参与 5s 轮询，数据不会自己走动） */
+    loadBlacklist: () => Promise<void>;
+    /** 解除某个用户在某个配置组下的拉黑 */
+    removeBlacklistRow: (profileId: string, userId: string) => Promise<void>;
+    /** 拉取某个群的群主与管理员（AI 失败通知对象级联菜单用），结果缓存进 groupManagers */
+    loadGroupManagers: (groupId: string) => Promise<GroupManagers | null>;
 
     /* ---------------- 群发消息（「发送消息」页） ---------------- */
     broadcastDraft: BroadcastDraft;
@@ -257,6 +271,9 @@ export const useStore = create<StoreState>()(
         groupDataLoading: false,
         smStats: [],
         smStatsLoading: false,
+        blacklist: [],
+        blacklistLoading: false,
+        groupManagers: {},
         broadcastDraft: { ...EMPTY_BROADCAST },
         broadcasting: false,
         broadcastResult: null,
@@ -789,6 +806,56 @@ export const useStore = create<StoreState>()(
                 get().toast('已删除该用户的禁言统计');
             } catch (error) {
                 get().handleError(error, '删除失败：');
+            }
+        },
+
+        loadBlacklist: async () => {
+            set((draft) => {
+                draft.blacklistLoading = true;
+            });
+            try {
+                const data = await request<{ records: BlacklistRow[] }>('/data/blacklist');
+                set((draft) => {
+                    draft.blacklist = data?.records ?? [];
+                });
+            } catch (error) {
+                get().handleError(error, '读取拉黑名单失败：');
+            } finally {
+                set((draft) => {
+                    draft.blacklistLoading = false;
+                });
+            }
+        },
+
+        removeBlacklistRow: async (profileId, userId) => {
+            try {
+                const data = await request<{ records: BlacklistRow[] }>('/data/blacklist/remove', {
+                    method: 'POST',
+                    body: { profileId, userId },
+                });
+                set((draft) => {
+                    draft.blacklist = data?.records ?? [];
+                });
+                get().toast('已解除拉黑');
+            } catch (error) {
+                get().handleError(error, '解除失败：');
+            }
+        },
+
+        loadGroupManagers: async (groupId) => {
+            try {
+                const data = await request<GroupManagers>(
+                    `/group/managers?groupId=${encodeURIComponent(groupId)}`,
+                );
+                if (data) {
+                    set((draft) => {
+                        draft.groupManagers[groupId] = data;
+                    });
+                }
+                return data ?? null;
+            } catch (error) {
+                get().handleError(error, '读取群管理信息失败：');
+                return null;
             }
         },
 
