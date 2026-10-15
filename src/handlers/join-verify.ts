@@ -91,11 +91,11 @@ registerCommand({
  *
  * 存储结构 { bot?: Bot管理QQ[], 群号?: 群主/管理员的QQ[] }：
  *   - bot 勾了具体的人 → 只通知这些人（不在 Bot 管理员名单里的忽略，防止配置乱写乱发）
- *   - bot 没勾 / 参数缺失 → 通知全部 Bot 管理员（与旧版行为一致）
+ *   - bot 没勾 / 参数缺失 → 不通知任何人（未配置即静默，避免无差别骚扰 Bot 主人）
  *   - 失败发生的群勾了人 → 查该群群主 / 管理员的本地记录（services/group-managers），
  *     只通知当前仍是群主 / 管理员的那些勾选对象（有人被撤职 / 退群后由群通知
  *     增量更新本地记录而自动失效，不用回来改配置，也不用每次都拉全量成员）
- * 查不到群主 / 管理员时只跳过该群的勾选目标，Bot 主人目标不受影响。
+ * 全部没勾选时返回空数组，上层据此跳过发送。
  */
 /** 导出仅供单元验证；正常流程走 notifyAiFailure */
 export async function resolveNotifyTargets(
@@ -116,13 +116,12 @@ export async function resolveNotifyTargets(
         if (id && id !== selfId) result.add(id);
     };
 
-    /* 1. Bot 主人组：勾了具体的人只通知他们，没勾 = 全部 */
+    /* 1. Bot 主人组：勾了具体的人只通知他们，没勾 = 静默（不回退到全部） */
     const botRaw = config.bot;
     const botList = (Array.isArray(botRaw) ? botRaw : [])
         .map((q) => String(q).trim())
         .filter((q) => admins.includes(q));
-    if (botList.length) botList.forEach(add);
-    else admins.forEach(add);
+    botList.forEach(add);
 
     /* 2. 失败发生的那个群：勾的是具体的群主 / 管理员 QQ，只通知当前仍在管理位置上的人 */
     const groupRaw = config[String(groupId)];
@@ -148,7 +147,7 @@ export async function resolveNotifyTargets(
     return [...result];
 }
 
-/** AI 判断失败：按配置私聊通知（默认全部 Bot 管理员），本次申请不自动审批（保持待处理） */
+/** AI 判断失败：按配置私聊通知（未配置则静默），本次申请不自动审批（保持待处理） */
 async function notifyAiFailure(
     params: Record<string, unknown>,
     groupId: number,

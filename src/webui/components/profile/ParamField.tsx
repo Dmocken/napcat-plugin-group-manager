@@ -360,7 +360,7 @@ function CascadeField({
                                         )}
                                         {!botList.length ? (
                                             <p className="px-2 pt-2 text-[11px] text-subtle">
-                                                不勾选任何人 = 通知全部 Bot 主人
+                                                不勾选任何人 = 不发送通知
                                             </p>
                                         ) : null}
                                     </>
