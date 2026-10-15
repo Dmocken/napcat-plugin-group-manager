@@ -1,4 +1,4 @@
-import { Bell, Bot, Check, ChevronDown } from 'lucide-react';
+import { Bell, Bot, Check, ChevronDown, RotateCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { GroupPicker } from '@/components/GroupPicker';
@@ -92,6 +92,23 @@ function WordListsField({
 
 /* ---------------- 级联选择（下拉弹层）：左侧群列表，右侧勾选具体通知的人 ---------------- */
 
+/**
+ * 时间戳 → 群主 / 管理员本地记录的时间显示：当天只显示 HH:mm，
+ * 跨天补上 MM-DD（记录不会过期，可能已经放了很久）；无时间戳返回空串。
+ */
+function clockText(at: number): string {
+    if (!at) return '';
+    const d = new Date(at);
+    const p = (n: number): string => String(n).padStart(2, '0');
+    const now = new Date();
+    const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+    const sameDay =
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate();
+    return sameDay ? hm : `${p(d.getMonth() + 1)}-${p(d.getDate())} ${hm}`;
+}
+
 function CascadeField({
     value,
     onChange,
@@ -110,7 +127,8 @@ function CascadeField({
 
     const [open, setOpen] = useState(false);
     const [selectedKey, setSelectedKey] = useState('bot');
-    const [loadingId, setLoadingId] = useState('');
+    /** 正在读取的群号（按群记录，多个群可以同时读，互不阻塞） */
+    const [loading, setLoading] = useState<Record<string, boolean>>({});
 
     /** 存储结构：{ bot: Bot管理QQ[]（空 = 全部）, 群号: 该群勾选的群主/管理员QQ[] } */
     const config = (
@@ -151,18 +169,28 @@ function CascadeField({
     // 切配置组 / 群列表变化后选中的 key 可能失效，回退到 Bot 主人
     const current = items.some((item) => item.key === selectedKey) ? selectedKey : 'bot';
 
-    // 选中某个群且缓存里没有 → 拉一次群主 / 管理员
+    /** 读某个群的群主 / 管理员；force = 跳过后端本地记录强制重新拉取 */
+    const startLoad = useCallback(
+        (groupId: string, force = false): void => {
+            setLoading((s) => (s[groupId] ? s : { ...s, [groupId]: true }));
+            void loadManagers(groupId, { refresh: force }).finally(() => {
+                setLoading((s) => {
+                    if (!s[groupId]) return s;
+                    const next = { ...s };
+                    delete next[groupId];
+                    return next;
+                });
+            });
+        },
+        [loadManagers],
+    );
+
+    // 选中某个群且本地还没有结果 → 拉一次群主 / 管理员
     useEffect(() => {
-        if (!open || current === 'bot' || managers[current] || loadingId) return;
-        let alive = true;
-        setLoadingId(current);
-        void loadManagers(current).finally(() => {
-            if (alive) setLoadingId('');
-        });
-        return () => {
-            alive = false;
-        };
-    }, [open, current, managers, loadingId, loadManagers]);
+        if (!open || current === 'bot') return;
+        if (managers[current] !== undefined || loading[current]) return;
+        startLoad(current);
+    }, [open, current, managers, loading, startLoad]);
 
     const botList = (Array.isArray(config.bot) ? config.bot : []).map(String);
     const checked = current === 'bot' ? [] : (Array.isArray(config[current]) ? config[current] : []).map(String);
@@ -291,77 +319,108 @@ function CascadeField({
                     </div>
 
                     {/* 右列：勾选通知对象 */}
-                    <div className="min-w-0 flex-1 overflow-auto p-1.5">
-                        {current === 'bot' ? (
-                            globalAdmins.length ? (
-                                <>
-                                    {globalAdmins.map((qq) =>
-                                        userRow(
-                                            String(qq),
-                                            String(qq),
-                                            friendName(String(qq)),
-                                            'Bot 主人',
-                                            botList.includes(String(qq)),
-                                            () => toggleBot(String(qq)),
-                                        ),
-                                    )}
-                                    {!botList.length ? (
-                                        <p className="px-2 pt-2 text-[11px] text-subtle">
-                                            不勾选任何人 = 通知全部 Bot 主人
-                                        </p>
-                                    ) : null}
-                                </>
-                            ) : (
-                                <p className="px-2 pt-2 text-[11px] text-subtle">
-                                    插件配置里还没有 Bot 管理员，勾选了也没有人能收到通知
-                                </p>
-                            )
-                        ) : loadingId === current ? (
-                            <p className="px-2 pt-2 text-[11px] text-subtle">正在读取群主 / 管理员…</p>
-                        ) : managers[current]?.error ? (
-                            <p className="px-2 pt-2 text-[11px] text-subtle">
-                                拉取失败：{managers[current]?.error}（机器人可能已不在该群）
-                            </p>
-                        ) : managers[current]?.owner || managers[current]?.admins.length ? (
-                            (() => {
-                                const info = managers[current];
-                                if (!info) return null;
-                                const owner = info.owner;
-                                return (
+                    <div className="flex min-w-0 flex-1 flex-col">
+                        {/* 群页签顶部：本地记录时间 + 手动刷新 */}
+                        {current === 'bot' ? null : (
+                            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-2.5 py-1">
+                                <span className="min-w-0 truncate text-[10px] leading-4 text-subtle">
+                                    {loading[current]
+                                        ? '正在读取…'
+                                        : managers[current]?.cached && managers[current]?.updatedAt
+                                          ? `本地记录 · ${clockText(managers[current]?.updatedAt ?? 0)}`
+                                          : managers[current]
+                                            ? '刚刚读取'
+                                            : '尚未读取'}
+                                </span>
+                                <button
+                                    type="button"
+                                    disabled={Boolean(loading[current])}
+                                    onClick={() => startLoad(current, true)}
+                                    className="flex shrink-0 cursor-pointer items-center gap-1 rounded-control px-1.5 py-0.5 text-[10px] leading-4 text-subtle transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <RotateCw className={cn('size-3', loading[current] && 'animate-spin')} />
+                                    刷新
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="min-h-0 flex-1 overflow-auto p-1.5">
+                            {current === 'bot' ? (
+                                globalAdmins.length ? (
                                     <>
-                                        {owner
-                                            ? userRow(
-                                                  `owner-${owner.userId}`,
-                                                  owner.userId,
-                                                  owner.name || friendName(owner.userId),
-                                                  '群主',
-                                                  checked.includes(owner.userId),
-                                                  () => toggleGroupUser(owner.userId),
-                                              )
-                                            : null}
-                                        {info.admins.map((admin) =>
+                                        {globalAdmins.map((qq) =>
                                             userRow(
-                                                `admin-${admin.userId}`,
-                                                admin.userId,
-                                                admin.name || friendName(admin.userId),
-                                                '管理员',
-                                                checked.includes(admin.userId),
-                                                () => toggleGroupUser(admin.userId),
+                                                String(qq),
+                                                String(qq),
+                                                friendName(String(qq)),
+                                                'Bot 主人',
+                                                botList.includes(String(qq)),
+                                                () => toggleBot(String(qq)),
                                             ),
                                         )}
-                                        {!checked.length ? (
+                                        {!botList.length ? (
                                             <p className="px-2 pt-2 text-[11px] text-subtle">
-                                                不勾选 = 这个群的判断失败只通知 Bot 主人组勾选的人
+                                                不勾选任何人 = 通知全部 Bot 主人
                                             </p>
                                         ) : null}
                                     </>
-                                );
-                            })()
-                        ) : (
-                            <p className="px-2 pt-2 text-[11px] text-subtle">
-                                这个群没有群主 / 管理员，判断失败时只通知 Bot 主人组勾选的人
-                            </p>
-                        )}
+                                ) : (
+                                    <p className="px-2 pt-2 text-[11px] text-subtle">
+                                        插件配置里还没有 Bot 管理员，勾选了也没有人能收到通知
+                                    </p>
+                                )
+                            ) : managers[current] === undefined || loading[current] ? (
+                                <p className="px-2 pt-2 text-[11px] text-subtle">正在读取群主 / 管理员…</p>
+                            ) : (
+                                (() => {
+                                    const info = managers[current];
+                                    if (!info) return null;
+                                    const owner = info.owner;
+                                    const hasData = Boolean(owner) || info.admins.length > 0;
+                                    return (
+                                        <>
+                                            {info.error ? (
+                                                <p className="px-2 pt-2 text-[11px] text-subtle">
+                                                    {hasData
+                                                        ? `更新失败，显示上次的记录：${info.error}`
+                                                        : `拉取失败：${info.error}（机器人可能已不在该群）`}
+                                                </p>
+                                            ) : null}
+                                            {owner
+                                                ? userRow(
+                                                      `owner-${owner.userId}`,
+                                                      owner.userId,
+                                                      owner.name || friendName(owner.userId),
+                                                      '群主',
+                                                      checked.includes(owner.userId),
+                                                      () => toggleGroupUser(owner.userId),
+                                                  )
+                                                : null}
+                                            {info.admins.map((admin) =>
+                                                userRow(
+                                                    `admin-${admin.userId}`,
+                                                    admin.userId,
+                                                    admin.name || friendName(admin.userId),
+                                                    '管理员',
+                                                    checked.includes(admin.userId),
+                                                    () => toggleGroupUser(admin.userId),
+                                                ),
+                                            )}
+                                            {!hasData && !info.error ? (
+                                                <p className="px-2 pt-2 text-[11px] text-subtle">
+                                                    这个群没有群主 / 管理员，判断失败时只通知 Bot 主人组勾选的人
+                                                </p>
+                                            ) : null}
+                                            {hasData && !checked.length ? (
+                                                <p className="px-2 pt-2 text-[11px] text-subtle">
+                                                    不勾选 = 这个群的判断失败只通知 Bot 主人组勾选的人
+                                                </p>
+                                            ) : null}
+                                        </>
+                                    );
+                                })()
+                            )}
+                        </div>
                     </div>
                 </div>
             </PopoverContent>

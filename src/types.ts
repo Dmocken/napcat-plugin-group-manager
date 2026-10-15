@@ -116,7 +116,8 @@ export interface ParamMeta {
      *   'bot'        Bot 主人组：值 = 具体 Bot 管理 QQ 列表；空 / 缺省 = 通知全部
      *   群号         该群勾选的通知对象 = 该群群主 / 管理员的 QQ 列表；空 = 该群失败只通知 Bot 主人
      * 弹层左侧 = 「Bot 主人」+ 本配置组绑定的群（WebUI 从群配置现取）；
-     * 右侧 = 勾选对象：Bot 组为 Bot 管理员名单，群为实时拉取的群主 / 管理员（接口 GET /group/managers）。
+     * 右侧 = 勾选对象：Bot 组为 Bot 管理员名单，群为该群群主 / 管理员
+     * （接口 GET /group/managers，走后端本地记录，群通知增量更新，?refresh=1 强制重拉）。
      */
     /**
      * 渲染位置：'permission' 表示该参数不是普通参数，

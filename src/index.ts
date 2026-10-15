@@ -31,6 +31,7 @@ import './handlers/ban';
 import './handlers/black';
 import './handlers/blacklist';
 import './handlers/check-silent';
+import './handlers/group-managers';
 import './handlers/join-verify';
 import './handlers/newban';
 import './handlers/ping';

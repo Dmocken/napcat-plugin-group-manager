@@ -13,6 +13,7 @@
 import { DEFAULT_AI_FAIL_NOTIFY, DEFAULT_AI_PROMPT, JUDGE_MODES, type JudgeMode } from '../constants';
 import { callAiChat, parseAiVerdict } from '../services/ai-judge';
 import { checkDuplicate } from '../services/dup-check';
+import { getGroupManagers } from '../services/group-managers';
 import { resolveWords, judgeAnswer } from '../services/text-judge';
 import { isRequestHandled, registerRequest } from '../core/events';
 import { callAction, sendGroup, sendPrivate } from '../core/messages';
@@ -91,9 +92,10 @@ registerCommand({
  * 存储结构 { bot?: Bot管理QQ[], 群号?: 群主/管理员的QQ[] }：
  *   - bot 勾了具体的人 → 只通知这些人（不在 Bot 管理员名单里的忽略，防止配置乱写乱发）
  *   - bot 没勾 / 参数缺失 → 通知全部 Bot 管理员（与旧版行为一致）
- *   - 失败发生的群勾了人 → 实时拉成员列表，只通知当前仍是群主 / 管理员的那些勾选对象
- *     （有人被撤职 / 退群后自动失效，不用回来改配置）
- * 拉不到成员列表时只跳过该群的勾选目标，Bot 主人目标不受影响。
+ *   - 失败发生的群勾了人 → 查该群群主 / 管理员的本地记录（services/group-managers），
+ *     只通知当前仍是群主 / 管理员的那些勾选对象（有人被撤职 / 退群后由群通知
+ *     增量更新本地记录而自动失效，不用回来改配置，也不用每次都拉全量成员）
+ * 查不到群主 / 管理员时只跳过该群的勾选目标，Bot 主人目标不受影响。
  */
 /** 导出仅供单元验证；正常流程走 notifyAiFailure */
 export async function resolveNotifyTargets(
@@ -127,21 +129,17 @@ export async function resolveNotifyTargets(
     const checked = (Array.isArray(groupRaw) ? groupRaw : []).map((q) => String(q).trim());
     if (checked.length) {
         try {
-            const members = await callAction<{ role?: string; user_id?: number | string }[]>(
-                'get_group_member_list',
-                { group_id: String(groupId) },
-            );
-            const managers = new Set(
-                (Array.isArray(members) ? members : [])
-                    .filter((m) => ['owner', 'admin'].includes(String(m?.role ?? '')))
-                    .map((m) => String(m?.user_id ?? '')),
-            );
+            const info = await getGroupManagers(String(groupId));
+            const managers = new Set<string>([
+                ...(info.owner ? [info.owner.userId] : []),
+                ...info.admins.map((a) => a.userId),
+            ]);
             checked.forEach((qq) => {
                 if (managers.has(qq)) add(qq);
             });
         } catch (e) {
             logWarn(
-                `[群管助手] AI 失败通知：拉取群 ${groupId} 成员列表失败，该群勾选的管理目标跳过:`,
+                `[群管助手] AI 失败通知：读取群 ${groupId} 群主 / 管理员本地记录失败，该群勾选的管理目标跳过:`,
                 e,
             );
         }

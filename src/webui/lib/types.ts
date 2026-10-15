@@ -243,6 +243,10 @@ export interface GroupManagers {
     owner: ManagerUser | null;
     /** 管理员们 */
     admins: ManagerUser[];
+    /** 本地记录最后更新的时间戳（实时拉取 = 拉取完成时间） */
+    updatedAt?: number;
+    /** true = 本次直接命中后端本地记录，没有重新拉取 */
+    cached?: boolean;
     /** 拉取失败的原因（bot 不在群里 / 接口异常）；有值时 owner / admins 为空 */
     error?: string;
 }

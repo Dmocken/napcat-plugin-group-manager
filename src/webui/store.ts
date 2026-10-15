@@ -189,8 +189,14 @@ interface StoreState {
     loadBlacklist: () => Promise<void>;
     /** 解除某个用户在某个配置组下的拉黑 */
     removeBlacklistRow: (profileId: string, userId: string) => Promise<void>;
-    /** 拉取某个群的群主与管理员（AI 失败通知对象级联菜单用），结果缓存进 groupManagers */
-    loadGroupManagers: (groupId: string) => Promise<GroupManagers | null>;
+    /**
+     * 拉取某个群的群主与管理员（AI 失败通知对象级联菜单用），结果缓存进 groupManagers。
+     * refresh = true 时绕过后端本地记录强制重新拉取。
+     */
+    loadGroupManagers: (
+        groupId: string,
+        options?: { refresh?: boolean },
+    ) => Promise<GroupManagers | null>;
 
     /* ---------------- 群发消息（「发送消息」页） ---------------- */
     broadcastDraft: BroadcastDraft;
@@ -842,18 +848,32 @@ export const useStore = create<StoreState>()(
             }
         },
 
-        loadGroupManagers: async (groupId) => {
+        loadGroupManagers: async (groupId, options) => {
+            const suffix = options?.refresh ? '&refresh=1' : '';
             try {
                 const data = await request<GroupManagers>(
-                    `/group/managers?groupId=${encodeURIComponent(groupId)}`,
+                    `/group/managers?groupId=${encodeURIComponent(groupId)}${suffix}`,
                 );
                 if (data) {
                     set((draft) => {
                         draft.groupManagers[groupId] = data;
                     });
+                    return data;
                 }
-                return data ?? null;
+                return null;
             } catch (error) {
+                // 记一条失败结果：级联菜单据此提示失败，而不是因为没有缓存反复重试
+                const message = error instanceof Error ? error.message : String(error);
+                set((draft) => {
+                    draft.groupManagers[groupId] = {
+                        groupId,
+                        owner: null,
+                        admins: [],
+                        updatedAt: 0,
+                        cached: false,
+                        error: message,
+                    };
+                });
                 get().handleError(error, '读取群管理信息失败：');
                 return null;
             }

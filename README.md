@@ -194,6 +194,7 @@ OneBot 没有「查某个 QQ 加了哪些群」的接口，所以采用**离线�
 | --- | --- |
 | `config.json` | 全局配置 + 全部群配置条目 |
 | `dup_snapshot.json` | 成员快照（旧的 `group_members.json` 会被兼容读取） |
+| `group_managers.json` | 群主 / 管理员本地记录（AI 失败通知对象用，群通知增量更新） |
 | `errors.log` | 最近错误记录（按行 JSON，超过 256KB 自动裁剪） |
 | `assets/` | 自定义图片（`{image=...}` 会从 `dataPath/assets`、插件目录 `assets` 里找） |
 
@@ -210,10 +211,10 @@ src/
 ├── core/               # 基础设施：状态与配置读写、命令路由、事件分发、权限、
 │                       # 文案模板、定时器、消息与 OneBot Action 封装
 ├── handlers/           # 各功能的命令与事件处理
-│                       # ban / black / check-silent / join-verify / newban /
-│                       # ping / random-ban / recall-stats
+│                       # ban / black / check-silent / group-managers / join-verify /
+│                       # newban / ping / random-ban / recall-stats
 ├── services/           # 业务服务：加群审核的 AI 判定与词表判定、重复加群检测、
-│                       # HTTP API 路由
+│                       # 群主 / 管理员本地记录、HTTP API 路由
 └── webui/              # 配置页面（React + Vite，构建成单文件 HTML）
     ├── components/     # 通用组件、UI 基础组件、群配置相关组件
     ├── pages/          # 概览 / 全局设置 / 群配置 / 群数据 / 发送消息
