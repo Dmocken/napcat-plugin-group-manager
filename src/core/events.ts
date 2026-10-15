@@ -11,7 +11,7 @@ import { beginActivity } from './activity';
 import { resolveNickname } from './nicknames';
 import { getFeatureSettings } from './profiles';
 import { isPluginEnabled } from './permission';
-import { logError, stats, logDebug } from './state';
+import { logError, logDebug, setActiveErrorContext, stats } from './state';
 
 export interface EventContext {
     event: RawEventLike;
@@ -159,18 +159,31 @@ async function run(
     // 处理器之间互相独立：某一个抛错不影响后面的，最后汇总进同一条日志的结果里
     let failure = '';
     for (const h of runnable) {
+        // 挂上上下文：handler 内部自己 catch 后再 logError 的（比如 AI 判断失败、禁言失败）
+        // 也能带上「哪个功能、哪个群、哪个用户」，与命令路由的做法保持一致
+        setActiveErrorContext({
+            source: 'event',
+            command: `${label}:${kind}`,
+            feature,
+            groupId: context.groupId,
+            userId: actorId,
+            userName,
+        });
         try {
             await h.handler(context);
         } catch (e) {
             failure = e instanceof Error ? e.message : String(e);
-            // 上下文显式传入：不依赖全局 activeErrorContext，避免与并发的命令记录互相覆盖
+            // 上下文显式传入：即便上面挂的全局上下文被并发的命令 / 事件覆盖，这里也不会丢
             logError(`[群管助手] 处理事件 ${label}/${kind} 失败:`, e, {
                 source: 'event',
+                command: `${label}:${kind}`,
                 feature,
                 groupId: context.groupId,
                 userId: actorId,
                 userName,
             });
+        } finally {
+            setActiveErrorContext(null);
         }
     }
 
