@@ -133,10 +133,15 @@ export function paramNumberList(params: Record<string, unknown>, key: string, de
     return list.length ? list : def;
 }
 
-/** 从 settings.params 取字符串数组（元素逐个转字符串、去空；空数组 / 非数组回退默认） */
-export function paramStringList(params: Record<string, unknown>, key: string, def: string[]): string[] {
-    const v = params?.[key];
-    if (!Array.isArray(v)) return def;
-    const list = v.map((x) => String(x).trim()).filter(Boolean);
-    return list.length ? list : def;
+/**
+ * 取对象里第一个非空字段。
+ *
+ * 事件 / 请求的字段名在不同 NapCat 版本里可能是下划线或驼峰，逐个候选尝试。
+ */
+export function pickField(raw: Record<string, unknown>, keys: string[]): unknown {
+    for (const k of keys) {
+        const v = raw[k];
+        if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    return undefined;
 }

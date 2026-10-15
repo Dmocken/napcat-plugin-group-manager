@@ -16,13 +16,14 @@ import { checkDuplicate } from '../services/dup-check';
 import { getGroupManagers } from '../services/group-managers';
 import { resolveWords, judgeAnswer } from '../services/text-judge';
 import { isRequestHandled, registerRequest } from '../core/events';
-import { callAction, sendGroup, sendPrivate } from '../core/messages';
-import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
+import { handleFeatureToggle } from '../core/feature-toggle';
+import { callAction, sendPrivate } from '../core/messages';
+import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { getGlobal, logDebug, logError, logWarn } from '../core/state';
 import { paramText } from '../core/texts';
 import { schedule } from '../core/timers';
-import { paramNumber, paramSelect, paramString } from '../core/utils';
+import { paramNumber, paramSelect, paramString, pickField } from '../core/utils';
 
 const JUDGE_MODE_VALUES: readonly string[] = [
     JUDGE_MODES.semantic,
@@ -50,40 +51,14 @@ registerCommand({
     block: true,
     permission: 'toggle',
     description: 'join open / join close — 开启或关闭本群加群自动审批',
-    handler: async (c) => {
-        const arg = (c.argv[0] ?? '').toLowerCase();
-        const settings = getFeatureSettings(c.groupId, 'join_verify');
-        const params = settings.params;
-        const enabled = settings.enabled;
-
-        if (arg === 'open') {
-            if (enabled) {
-                await sendGroup(c.groupId, paramText(params, 'join_on_echo', '当前群的加群自动审批已经是开启状态'));
-                return;
-            }
-            setFeatureEnabled(c.groupId, 'join_verify', true);
-            await sendGroup(
-                c.groupId,
-                paramText(params, 'join_opened', '已开启群 {group} 的加群自动审批', { group: c.groupId }),
-            );
-            return;
-        }
-
-        if (arg === 'close') {
-            if (!enabled) {
-                await sendGroup(c.groupId, paramText(params, 'join_off_echo', '当前群的加群自动审批已经是关闭状态'));
-                return;
-            }
-            setFeatureEnabled(c.groupId, 'join_verify', false);
-            await sendGroup(
-                c.groupId,
-                paramText(params, 'join_closed', '已关闭群 {group} 的加群自动审批', { group: c.groupId }),
-            );
-            return;
-        }
-
-        await sendGroup(c.groupId, paramText(params, 'join_usage', '用法：join open 或 join close'));
-    },
+    handler: (c) =>
+        handleFeatureToggle(c, 'join_verify', {
+            onEcho: 'join_on_echo',
+            opened: 'join_opened',
+            offEcho: 'join_off_echo',
+            closed: 'join_closed',
+            usage: 'join_usage',
+        }),
 });
 
 /**
@@ -187,13 +162,7 @@ registerRequest('group', 'join_verify', async (ctx) => {
     }
 
     /** 取第一个非空字段（不同 NapCat 版本的字段名可能是下划线或驼峰） */
-    const pick = (keys: string[]): unknown => {
-        for (const k of keys) {
-            const v = raw[k];
-            if (v !== undefined && v !== null && String(v).trim() !== '') return v;
-        }
-        return undefined;
-    };
+    const pick = (keys: string[]): unknown => pickField(raw, keys);
 
     const subTypeRaw = pick(['sub_type', 'subType', 'request_sub_type']);
     const flagRaw = pick(['flag', 'request_id', 'requestId', 'seq', 'templateSeq']);

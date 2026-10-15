@@ -19,11 +19,6 @@ export function schedule(ms: number, fn: () => void | Promise<void>): NodeJS.Tim
     return timer;
 }
 
-export function cancel(timer: NodeJS.Timeout): void {
-    clearTimeout(timer);
-    timers.delete(timer);
-}
-
 /** 清理全部延时任务（plugin_cleanup 调用） */
 export function clearAllTimers(): number {
     const count = timers.size;

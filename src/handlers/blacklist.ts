@@ -19,15 +19,7 @@ import { findProfileByGroup, getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logDebug, logError } from '../core/state';
 import { paramText } from '../core/texts';
-
-/** 取第一个非空字段（不同 NapCat 版本字段名可能是下划线或驼峰），与加群审核保持一致 */
-function pick(raw: Record<string, unknown>, keys: string[]): unknown {
-    for (const k of keys) {
-        const v = raw[k];
-        if (v !== undefined && v !== null && String(v).trim() !== '') return v;
-    }
-    return undefined;
-}
+import { pickField } from '../core/utils';
 
 /**
  * 拉黑 / 解除拉黑的公共部分：解析目标（@ 或 QQ 号）、定位配置组。
@@ -126,13 +118,13 @@ registerRequest('group', 'blacklist', async (ctx) => {
     const event = ctx.event;
     const raw = event as unknown as Record<string, unknown>;
 
-    const groupId = Number(pick(raw, ['group_id', 'groupId', 'groupCode']) ?? ctx.groupId ?? 0);
-    const userId = Number(pick(raw, ['user_id', 'userId']) ?? ctx.userId ?? 0);
+    const groupId = Number(pickField(raw, ['group_id', 'groupId', 'groupCode']) ?? ctx.groupId ?? 0);
+    const userId = Number(pickField(raw, ['user_id', 'userId']) ?? ctx.userId ?? 0);
     if (!groupId || !userId) return;
 
     if (!isBlacklisted(groupId, userId)) return;
 
-    const flag = pick(raw, ['flag', 'request_id', 'requestId', 'seq', 'templateSeq']);
+    const flag = pickField(raw, ['flag', 'request_id', 'requestId', 'seq', 'templateSeq']);
     if (flag === undefined || String(flag).trim() === '') {
         logError(
             `[群管助手] 拉黑拦截：加群申请没有 flag 字段，无法拒绝（group=${groupId} user=${userId}）`,
@@ -141,7 +133,7 @@ registerRequest('group', 'blacklist', async (ctx) => {
     }
 
     // 邀请入群也一并拒绝：「一律拦截」不能留一个被拉黑的人被好友拉回去的口子
-    const subType = String(pick(raw, ['sub_type', 'subType']) ?? 'add').toLowerCase();
+    const subType = String(pickField(raw, ['sub_type', 'subType']) ?? 'add').toLowerCase();
     const params = getFeatureSettings(groupId, 'blacklist').params;
     const reason = paramText(
         params,

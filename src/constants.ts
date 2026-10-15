@@ -15,9 +15,6 @@ import type {
     ParamType,
 } from './types';
 
-export const PLUGIN_ID = 'napcat-plugin-group-manager';
-export const PLUGIN_DISPLAY_NAME = '群管助手';
-
 /** 全部功能标识 */
 export const FEATURE_KEYS: FeatureKey[] = [
     'ban',

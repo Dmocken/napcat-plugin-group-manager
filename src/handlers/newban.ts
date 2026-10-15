@@ -9,12 +9,11 @@
 import { DEFAULT_NEWBAN_REMUTE, DEFAULT_NEWBAN_WELCOME } from '../constants';
 import { findPendingBan, removeBanRecord, restoreBanRecord } from '../core/ban-records';
 import { registerNotice } from '../core/events';
+import { handleFeatureToggle } from '../core/feature-toggle';
 import { at, callAction, renderTemplate, sendGroup } from '../core/messages';
-import { canToggle } from '../core/permission';
-import { findProfileByGroup, getFeatureSettings, setFeatureEnabled } from '../core/profiles';
+import { findProfileByGroup, getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logDebug, logError, logWarn } from '../core/state';
-import { paramText } from '../core/texts';
 import { formatDuration, paramBool, paramNumber, paramString } from '../core/utils';
 
 registerNotice('group_increase', 'newban', async (ctx) => {
@@ -97,43 +96,12 @@ registerCommand({
     block: true,
     permission: 'toggle',
     description: 'newban open / newban close — 开启或关闭本群新人禁言',
-    handler: async (c) => {
-        const arg = (c.argv[0] ?? '').toLowerCase();
-        const settings = getFeatureSettings(c.groupId, 'newban');
-        const params = settings.params;
-        const current = settings.enabled;
-
-        if (arg === 'open') {
-            if (current) {
-                await sendGroup(c.groupId, paramText(params, 'newban_on_echo', '当前群的新人禁言已经是开启状态'));
-                return;
-            }
-            setFeatureEnabled(c.groupId, 'newban', true);
-            await sendGroup(
-                c.groupId,
-                paramText(params, 'newban_opened', '已开启群 {group} 的新人禁言', { group: c.groupId }),
-            );
-            return;
-        }
-
-        if (arg === 'close') {
-            if (!current) {
-                await sendGroup(c.groupId, paramText(params, 'newban_off_echo', '当前群的新人禁言已经是关闭状态'));
-                return;
-            }
-            setFeatureEnabled(c.groupId, 'newban', false);
-            await sendGroup(
-                c.groupId,
-                paramText(params, 'newban_closed', '已关闭群 {group} 的新人禁言', { group: c.groupId }),
-            );
-            return;
-        }
-
-        await sendGroup(c.groupId, paramText(params, 'newban_usage', '用法：newban open 或 newban close'));
-    },
+    handler: (c) =>
+        handleFeatureToggle(c, 'newban', {
+            onEcho: 'newban_on_echo',
+            opened: 'newban_opened',
+            offEcho: 'newban_off_echo',
+            closed: 'newban_closed',
+            usage: 'newban_usage',
+        }),
 });
-
-/** 该群是否允许群主/管理员控制开关（供配置说明展示，实际判定在 router 里） */
-export function canToggleNewban(groupId: number, userId: number, role: string): boolean {
-    return canToggle(groupId, userId, role, 'newban');
-}

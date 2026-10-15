@@ -8,7 +8,7 @@
  */
 
 import { loadBlackHistory, nextBlackId, saveBlackHistory, type BlackContent, type BlackRecord } from '../core/group-data';
-import { callAction, replyIdOf, segmentsOf, sendGroup } from '../core/messages';
+import { callAction, replyIdOf, sendGroup } from '../core/messages';
 import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logError, logDebug } from '../core/state';
@@ -159,8 +159,3 @@ registerCommand({
         await sendGroup(c.groupId, paramText(params, 'black_deleted', '我忘掉编号为 {id} 的黑历史了！', { id }));
     },
 });
-
-/** 供 /check debug 之类功能复用的消息段调试输出 */
-export function describeSegments(event: Parameters<typeof segmentsOf>[0]): string {
-    return segmentsOf(event).map((s) => s.type).join(',');
-}

@@ -94,8 +94,8 @@ function buildContext(event: RawEventLike): EventContext {
     };
 }
 
-/** 取字符串字段（同样兼容驼峰命名） */
-function textOf(event: RawEventLike, keys: string[]): string {
+/** 取字符串字段（同样兼容驼峰命名）；供其它解析事件字段的模块复用 */
+export function textOf(event: RawEventLike, keys: string[]): string {
     const raw = event as unknown as Record<string, unknown>;
     for (const key of keys) {
         const value = raw[key];

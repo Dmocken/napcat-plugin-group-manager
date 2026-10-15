@@ -1,4 +1,3 @@
-import { X } from 'lucide-react';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
@@ -109,29 +108,5 @@ export function EmptyState({
             ) : null}
             {action ? <div className="mt-2">{action}</div> : null}
         </div>
-    );
-}
-
-/* ---------------- 关闭按钮（弹窗右上角） ---------------- */
-
-export function CloseButton({
-    onClick,
-    className,
-}: {
-    onClick: () => void;
-    className?: string;
-}): React.JSX.Element {
-    return (
-        <button
-            type="button"
-            aria-label="关闭"
-            onClick={onClick}
-            className={cn(
-                'grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-subtle transition-colors hover:bg-surface-3 hover:text-ink',
-                className,
-            )}
-        >
-            <X className="size-3.5" />
-        </button>
     );
 }

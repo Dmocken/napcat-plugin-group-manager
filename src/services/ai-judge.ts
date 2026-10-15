@@ -2,13 +2,12 @@
  * 入群答案的 AI 语义判断（OpenAI 兼容接口，默认 DeepSeek）
  *
  * 约定：模型只输出 1 或 0 —— 1 表示通过、0 表示拒绝。
- * 调用失败（网络 / 超时 / HTTP 错误 / 返回不可解析）时 judgeByAi 返回 null，
+ * 调用失败（网络 / 超时 / HTTP 错误 / 返回不可解析）时 callAiChat 返回 { ok: false }，
  * 由调用方决定怎么处理（当前实现是通知 Bot 管理员并跳过自动审批）。
  *
  * 只用 Node 自带的 fetch，不引入任何依赖，方便随插件一起打包。
  */
 
-import { logDebug, logError } from '../core/state';
 import { renderText } from '../core/texts';
 
 export interface AiJudgeConfig {
@@ -101,29 +100,6 @@ export async function callAiChat(
     } finally {
         clearTimeout(timer);
     }
-}
-
-/**
- * 调用 AI 判断答案是否表达「愿意」
- * @returns true 通过 / false 拒绝 / null 判断失败（网络、超时、格式异常）
- */
-export async function judgeByAi(
-    cfg: AiJudgeConfig,
-    question: string,
-    answer: string,
-): Promise<boolean | null> {
-    const result = await callAiChat(cfg, question, answer);
-    if (!result.ok) {
-        logError(`[群管助手] AI 判断失败：${result.error}`);
-        return null;
-    }
-
-    const verdict = parseAiVerdict(result.content);
-    logDebug(`[群管助手] AI 判断结果=${verdict} 原始回复=${JSON.stringify(result.content.slice(0, 60))}`);
-    if (verdict === null) {
-        logError(`[群管助手] AI 回复无法解析出 1/0：${JSON.stringify(result.content.slice(0, 120))}`);
-    }
-    return verdict;
 }
 
 /** 供「测试 API Key」使用：返回模型回复或失败原因 */

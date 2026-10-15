@@ -9,28 +9,14 @@
  *   - 完全没信号 → 拒绝
  */
 
+import { DEFAULT_JUDGE_WORDS } from '../constants';
+
 export interface JudgeWords {
     agree: string[];
     negation: string[];
     reject: string[];
     double_negation: string[];
 }
-
-export const DEFAULT_JUDGE_WORDS: JudgeWords = {
-    agree: [
-        '同意', '愿意', '可以', '好的', '行', '能', '接受', '答应', '是', '对', '会', '要', '想', '好', '嗯',
-        '支持', '喜欢', '期待', '希望', '加入', '来', '进', '必须',
-        'ok', 'yes', 'yep', 'yeah', 'sure',
-        '是的', '对的', '好吧', '行吧', '可以啊', '行啊', '好啊', '来啊', '来来来',
-    ],
-    negation: ['不', '没', '别', '无', '未', '非', '否', '莫', '休', '勿'],
-    reject: [
-        '拒绝', '不行', '不要', '不想', '不能', '不好', '不可以',
-        '不愿意', '不同意', '不会', '不干', '免了', '算了', '不加', '不进了', '不进', '别拉我',
-        'no', 'nope', 'nah', 'non',
-    ],
-    double_negation: ['没说', '没有', '不是', '并非'],
-};
 
 /** 从 params.words 读取词表，缺失项回退默认 */
 export function resolveWords(raw: unknown): JudgeWords {

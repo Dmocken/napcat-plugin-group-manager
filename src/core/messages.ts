@@ -108,12 +108,6 @@ export async function sendPrivate(userId: number | string, message: string | Seg
 /** 合并转发节点上限（NapCat 保守值） */
 const NODES_PER_BATCH = 50;
 
-export interface ForwardNode {
-    content: string | Seg[];
-    nickname?: string;
-    userId?: string;
-}
-
 let cachedSelfId = '';
 
 export async function getSelfId(): Promise<string> {

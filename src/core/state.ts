@@ -26,10 +26,6 @@ export function ctx(): NapCatPluginContext {
     return ncCtx;
 }
 
-export function tryCtx(): NapCatPluginContext | null {
-    return ncCtx;
-}
-
 /* ---------------- 运行统计 ---------------- */
 
 export const stats = {

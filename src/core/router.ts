@@ -18,7 +18,7 @@ import {
     segmentsOf,
 } from './messages';
 import { canToggle, canUse, isPluginEnabled } from './permission';
-import { ctx, logDebug, logError, setActiveErrorContext, stats } from './state';
+import { logDebug, logError, setActiveErrorContext, stats } from './state';
 
 export type PermissionKind = 'use' | 'toggle' | 'none';
 export type CommandScope = 'group' | 'private' | 'both';
@@ -44,10 +44,6 @@ const commands: CommandDef[] = [];
 
 export function registerCommand(def: CommandDef): void {
     commands.push({ permission: 'use', scope: 'both', prefixRequired: true, ...def });
-}
-
-export function registeredCommands(): CommandDef[] {
-    return commands;
 }
 
 function namesOf(def: CommandDef): string[] {
@@ -228,15 +224,4 @@ export function helpText(enabledKeys: string[]): string {
     lines.push('━━━━━━━━━━━━━━━');
     lines.push(`命令前缀：${commandPrefix()}`);
     return lines.join('\n');
-}
-
-/** 供调试用：当前事件的消息段类型 */
-export function debugSegments(event: RawEventLike): string {
-    return segmentsOf(event)
-        .map((s) => s.type)
-        .join(',');
-}
-
-export function pluginName(): string {
-    return ctx().pluginName;
 }

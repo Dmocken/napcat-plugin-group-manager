@@ -99,17 +99,10 @@ async function lookup(groupId: number | string, userId: string): Promise<string>
 }
 
 /**
- * 取昵称：命中缓存直接返回，否则反查。
- * @returns 拿不到时返回空串，调用方按「没有昵称」处理
+ * 缓存 + 并发去重的公共骨架：命中缓存（含「查不到」的短缓存）直接返回，
+ * 同一目标并发只发一次请求。
  */
-export async function resolveNickname(
-    groupId: number | string,
-    userId: number | string,
-): Promise<string> {
-    const id = String(userId ?? '').trim();
-    if (!id || id === '0') return '';
-
-    const key = keyOf(groupId, id);
+async function cachedLookup(key: string, fetcher: () => Promise<string>): Promise<string> {
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < (hit.name ? NAME_TTL : MISS_TTL)) return hit.name;
 
@@ -117,7 +110,7 @@ export async function resolveNickname(
     if (running) return running;
 
     const task = (async (): Promise<string> => {
-        const name = await lookup(groupId, id);
+        const name = await fetcher();
         if (cache.size >= MAX_ENTRIES) cache.clear();
         cache.set(key, { name, at: Date.now() });
         return name;
@@ -132,6 +125,19 @@ export async function resolveNickname(
 }
 
 /**
+ * 取昵称：命中缓存直接返回，否则反查。
+ * @returns 拿不到时返回空串，调用方按「没有昵称」处理
+ */
+export async function resolveNickname(
+    groupId: number | string,
+    userId: number | string,
+): Promise<string> {
+    const id = String(userId ?? '').trim();
+    if (!id || id === '0') return '';
+    return cachedLookup(keyOf(groupId, id), () => lookup(groupId, id));
+}
+
+/**
  * 只查陌生人信息（get_stranger_info）的反查：用于「人不在群里」的场景
  * ——加群申请人还没进群、退群 / 被踢的人已离群。
  *
@@ -142,25 +148,5 @@ export async function resolveNickname(
 export async function resolveStrangerNickname(userId: number | string): Promise<string> {
     const id = String(userId ?? '').trim();
     if (!id || id === '0') return '';
-
-    const key = `u_${id}`;
-    const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < (hit.name ? NAME_TTL : MISS_TTL)) return hit.name;
-
-    const running = pending.get(key);
-    if (running) return running;
-
-    const task = (async (): Promise<string> => {
-        const name = nameOf(await ask('get_stranger_info', { user_id: id }));
-        if (cache.size >= MAX_ENTRIES) cache.clear();
-        cache.set(key, { name, at: Date.now() });
-        return name;
-    })();
-
-    pending.set(key, task);
-    try {
-        return await task;
-    } finally {
-        pending.delete(key);
-    }
+    return cachedLookup(`u_${id}`, async () => nameOf(await ask('get_stranger_info', { user_id: id })));
 }

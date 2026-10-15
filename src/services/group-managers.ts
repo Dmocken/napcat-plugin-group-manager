@@ -15,6 +15,7 @@
 
 import fs from 'node:fs';
 
+import { textOf } from '../core/events';
 import { callAction } from '../core/messages';
 import { getCachedNickname } from '../core/nicknames';
 import { logDebug, logWarn } from '../core/state';
@@ -176,17 +177,6 @@ export async function getGroupManagers(
     }
 }
 
-/** 取事件里的号码字段（兼容下划线 / 驼峰命名） */
-function numberOf(event: RawEventLike, keys: string[]): string {
-    const raw = event as unknown as Record<string, unknown>;
-    for (const key of keys) {
-        const value = raw[key];
-        if (value === undefined || value === null || String(value).trim() === '') continue;
-        return String(value).trim();
-    }
-    return '';
-}
-
 /**
  * group_admin 通知：管理员被设置 / 撤销时增量更新本地记录。
  *
@@ -201,8 +191,8 @@ function numberOf(event: RawEventLike, keys: string[]): string {
  * 没记录过这个群就直接跳过 —— 下次拉取会拿到全量数据，避免拼出残缺的记录。
  */
 export function applyGroupAdminNotice(event: RawEventLike): void {
-    const groupId = numberOf(event, ['group_id', 'groupId']);
-    const userId = numberOf(event, ['user_id', 'userId']);
+    const groupId = textOf(event, ['group_id', 'groupId']);
+    const userId = textOf(event, ['user_id', 'userId']);
     const subType = String(event.sub_type ?? '').toLowerCase();
     // 调试期先裸打全量事件，便于确认字段名 / 事件是否真的上报（NapCat 各版本有出入）
     logDebug(`[群管助手] group_admin 原始事件: ${JSON.stringify(event)}`);
@@ -240,8 +230,8 @@ export function applyGroupAdminNotice(event: RawEventLike): void {
  *   - 退的是群主 → 群主会自动转移，本地无从得知，删掉记录让下次强制实时拉取
  */
 export function applyMemberDecreaseNotice(event: RawEventLike): void {
-    const groupId = numberOf(event, ['group_id', 'groupId']);
-    const userId = numberOf(event, ['user_id', 'userId']);
+    const groupId = textOf(event, ['group_id', 'groupId']);
+    const userId = textOf(event, ['user_id', 'userId']);
     if (!groupId || !userId) return;
 
     const store = load();

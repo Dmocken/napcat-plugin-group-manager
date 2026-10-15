@@ -11,14 +11,14 @@ import { registerNotice } from '../core/events';
 import { loadRecallRecords, saveRecallRecords, type RecallData, type RecallUserData } from '../core/group-data';
 import { cachedMessageText } from '../core/message-cache';
 import { at, callAction, describeSegments, MESSAGES, sendForward, sendGroup, sendPrivate, text } from '../core/messages';
+import { handleFeatureToggle } from '../core/feature-toggle';
 import { canToggle, isGlobalAdmin } from '../core/permission';
-import { getFeatureSettings, setFeatureEnabled } from '../core/profiles';
+import { getFeatureSettings } from '../core/profiles';
 import { registerCommand } from '../core/router';
 import { logDebug, logError } from '../core/state';
 import { paramText } from '../core/texts';
 import { paramNumberList, paramString } from '../core/utils';
 
-const FORWARD_NICKNAME = '群管理助手';
 const DEFAULT_WARNING = '您已被撤回消息 {count} 次，请注意言行，遵守群规！';
 
 function getUserRecords(data: RecallData, groupId: number | string, userId: number | string): RecallUserData | undefined {
@@ -137,53 +137,17 @@ registerCommand({
 
         /* ---- 群聊：开关 ---- */
         if (isGroup) {
-            const settings = getFeatureSettings(c.groupId, 'recall_stats');
-            const params = settings.params;
-
             if (!canToggle(c.groupId, c.userId, c.role, 'recall_stats')) {
                 await sendGroup(c.groupId, MESSAGES.noPermission);
                 return;
             }
-
-            const arg = (c.argv[0] ?? '').toLowerCase();
-            const enabled = settings.enabled;
-
-            if (arg === 'open') {
-                if (enabled) {
-                    await sendGroup(
-                        c.groupId,
-                        paramText(params, 'recall_on_echo', '当前群的撤回消息统计已经是开启状态'),
-                    );
-                    return;
-                }
-                setFeatureEnabled(c.groupId, 'recall_stats', true);
-                await sendGroup(
-                    c.groupId,
-                    paramText(params, 'recall_opened', '已开启群 {group} 的撤回消息统计', { group: c.groupId }),
-                );
-                return;
-            }
-
-            if (arg === 'close') {
-                if (!enabled) {
-                    await sendGroup(
-                        c.groupId,
-                        paramText(params, 'recall_off_echo', '当前群的撤回消息统计已经是关闭状态'),
-                    );
-                    return;
-                }
-                setFeatureEnabled(c.groupId, 'recall_stats', false);
-                await sendGroup(
-                    c.groupId,
-                    paramText(params, 'recall_closed', '已关闭群 {group} 的撤回消息统计', { group: c.groupId }),
-                );
-                return;
-            }
-
-            await sendGroup(
-                c.groupId,
-                paramText(params, 'recall_usage_group', '群聊用法：recall open 或 recall close'),
-            );
+            await handleFeatureToggle(c, 'recall_stats', {
+                onEcho: 'recall_on_echo',
+                opened: 'recall_opened',
+                offEcho: 'recall_off_echo',
+                closed: 'recall_closed',
+                usage: 'recall_usage_group',
+            });
             return;
         }
 
@@ -290,5 +254,3 @@ registerCommand({
         }
     },
 });
-
-export { FORWARD_NICKNAME };

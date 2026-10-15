@@ -18,13 +18,3 @@ export function PageSkeleton(): React.JSX.Element {
         </div>
     );
 }
-
-/** 详情区骨架：左侧列表 + 右侧内容 */
-export function DetailSkeleton(): React.JSX.Element {
-    return (
-        <div className="flex gap-5">
-            <Skeleton className="w-[268px] shrink-0" />
-            <Skeleton className="h-[520px] min-w-0 flex-1" />
-        </div>
-    );
-}
