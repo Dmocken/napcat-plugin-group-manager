@@ -1,8 +1,9 @@
-import { Activity, CircleCheck, Download, RefreshCw, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { Activity, BarChart3, CircleCheck, Download, List, RefreshCw, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { TimeSeriesChart, buildTimeSeries } from '@/components/charts/TimeSeriesChart';
 import {
     Dialog,
     DialogContent,
@@ -12,6 +13,12 @@ import {
 import { IdentityCell } from '@/components/ui/identity';
 import { Panel, PanelHeader } from '@/components/ui/panel';
 import { featureIcon, featureShort } from '@/lib/constants';
+import {
+    ACTIVITY_GROUP_CHILDREN,
+    activityGroup,
+    LOG_GROUP_ORDER,
+    type LogGroup,
+} from '@/lib/log-groups';
 import type { ActivityRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store';
@@ -120,6 +127,47 @@ export function ActivityLogPanel(): React.JSX.Element {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [page, setPage] = useState(0);
+    const [view, setView] = useState<'chart' | 'list'>('chart');
+    const [dialogView, setDialogView] = useState<'chart' | 'list'>('chart');
+    /** 已拆开显示的子命令：业务组 → 命令集合 */
+    const [split, setSplit] = useState<Record<string, Set<string>>>({});
+
+    const toggleSplit = (group: string, child: string): void => {
+        setSplit((prev) => {
+            const next = { ...prev, [group]: new Set(prev[group] ?? []) };
+            if (next[group].has(child)) next[group].delete(child);
+            else next[group].add(child);
+            if (!next[group].size) delete next[group];
+            return next;
+        });
+    };
+    const setSplitGroup = (group: string, children: string[]): void => {
+        setSplit((prev) => {
+            const next = { ...prev };
+            if (children.length) next[group] = new Set(children);
+            else delete next[group];
+            return next;
+        });
+    };
+
+    /** 一段时间内各业务组的调用次数（按小时 / 天分桶） */
+    const activitySeries = useMemo(
+        () =>
+            buildTimeSeries(
+                activities,
+                (r) => r.time,
+                (r) => {
+                    const base = activityGroup(r.action, r.feature);
+                    const children = ACTIVITY_GROUP_CHILDREN[base as LogGroup];
+                    return children?.includes(r.action) && split[base]?.has(r.action)
+                        ? base + ' · ' + r.action
+                        : base;
+                },
+                LOG_GROUP_ORDER,
+                24,
+            ),
+        [activities, split],
+    );
 
     const nameOf = (groupId: string): string =>
         groups.find((g) => String(g.group_id) === groupId)?.group_name || groupId;
@@ -154,6 +202,22 @@ export function ActivityLogPanel(): React.JSX.Element {
                     }
                     actions={
                         <div className="flex items-center gap-2">
+                            <Button
+                                size="sm"
+                                variant={view === 'chart' ? 'default' : 'ghost'}
+                                onClick={() => setView('chart')}
+                            >
+                                <BarChart3 className="size-3.5" />
+                                图表
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant={view === 'list' ? 'default' : 'ghost'}
+                                onClick={() => setView('list')}
+                            >
+                                <List className="size-3.5" />
+                                日志
+                            </Button>
                             <Button size="sm" loading={loading} onClick={() => void reload()}>
                                 <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
                                 刷新
@@ -165,7 +229,15 @@ export function ActivityLogPanel(): React.JSX.Element {
                     }
                 />
 
-                {activities.length === 0 ? (
+                {view === 'chart' ? (
+                    <TimeSeriesChart
+                        data={activitySeries}
+                        groupChildren={ACTIVITY_GROUP_CHILDREN}
+                        split={split}
+                        onToggleSplit={toggleSplit}
+                        onSetSplit={setSplitGroup}
+                    />
+                ) : activities.length === 0 ? (
                     <div className="flex items-center gap-2 px-5 py-6 text-[13px] text-subtle">
                         <CircleCheck className="size-4" />
                         暂无功能调用记录
@@ -194,49 +266,77 @@ export function ActivityLogPanel(): React.JSX.Element {
                                 最多保留 200 条，超出后自动轮转 activity.log
                             </DialogDescription>
                         </div>
+                        <Button
+                            size="sm"
+                            variant={dialogView === 'chart' ? 'default' : 'ghost'}
+                            onClick={() => setDialogView('chart')}
+                        >
+                            <BarChart3 className="size-3.5" />
+                            图表
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant={dialogView === 'list' ? 'default' : 'ghost'}
+                            onClick={() => setDialogView('list')}
+                        >
+                            <List className="size-3.5" />
+                            日志
+                        </Button>
                         <Button size="sm" loading={loading} onClick={() => void reload()}>
                             <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
                             刷新
                         </Button>
                     </div>
 
-                    <div className="max-h-[460px] overflow-y-auto">
-                        {activities.length === 0 ? (
-                            <p className="px-5 py-8 text-center text-[13px] text-subtle">
-                                暂无功能调用记录
-                            </p>
-                        ) : (
-                            pageList.map((record, index) => (
-                                <Row key={`${record.time}-${index}`} record={record} nameOf={nameOf} />
-                            ))
-                        )}
-                    </div>
-
-                    {total > PAGE_SIZE ? (
-                        <div className="flex items-center justify-between gap-2 border-t border-line px-5 py-2 text-[11px]">
-                            <span className="text-subtle">
-                                第 {safePage + 1} / {totalPages} 页 · 共 {total} 条
-                            </span>
-                            <div className="flex items-center gap-1">
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    disabled={safePage === 0}
-                                    onClick={() => setPage((p) => Math.max(0, p - 1))}
-                                >
-                                    上一页
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    disabled={safePage >= totalPages - 1}
-                                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                                >
-                                    下一页
-                                </Button>
+                    {dialogView === 'chart' ? (
+                        <TimeSeriesChart
+                            data={activitySeries}
+                            groupChildren={ACTIVITY_GROUP_CHILDREN}
+                            split={split}
+                            onToggleSplit={toggleSplit}
+                            onSetSplit={setSplitGroup}
+                        />
+                    ) : (
+                        <>
+                            <div className="max-h-[460px] overflow-y-auto">
+                                {activities.length === 0 ? (
+                                    <p className="px-5 py-8 text-center text-[13px] text-subtle">
+                                        暂无功能调用记录
+                                    </p>
+                                ) : (
+                                    pageList.map((record, index) => (
+                                        <Row key={`${record.time}-${index}`} record={record} nameOf={nameOf} />
+                                    ))
+                                )}
                             </div>
-                        </div>
-                    ) : null}
+
+                            {total > PAGE_SIZE ? (
+                                <div className="flex items-center justify-between gap-2 border-t border-line px-5 py-2 text-[11px]">
+                                    <span className="text-subtle">
+                                        第 {safePage + 1} / {totalPages} 页 · 共 {total} 条
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={safePage === 0}
+                                            onClick={() => setPage((p) => Math.max(0, p - 1))}
+                                        >
+                                            上一页
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={safePage >= totalPages - 1}
+                                            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                                        >
+                                            下一页
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : null}
+                        </>
+                    )}
 
                     <div className="flex items-center gap-2 border-t border-line px-5 py-3">
                         <Button
