@@ -127,6 +127,7 @@ export function ActivityLogPanel(): React.JSX.Element {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [page, setPage] = useState(0);
+    const [jump, setJump] = useState('');
     const [view, setView] = useState<'chart' | 'list'>('chart');
     const [dialogView, setDialogView] = useState<'chart' | 'list'>('chart');
     /** 已拆开显示的子命令：业务组 → 命令集合 */
@@ -184,6 +185,13 @@ export function ActivityLogPanel(): React.JSX.Element {
     const safePage = Math.min(page, totalPages - 1);
     const pageList = activities.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
+    /** 输入页码跳转（夹紧到合法范围，1 ~ totalPages） */
+    const goJump = (): void => {
+        const n = parseInt(jump, 10);
+        if (!Number.isNaN(n)) setPage(Math.min(Math.max(1, n), totalPages) - 1);
+        setJump('');
+    };
+
     const reload = async (): Promise<void> => {
         setLoading(true);
         await refreshActivities();
@@ -196,7 +204,7 @@ export function ActivityLogPanel(): React.JSX.Element {
                 <PanelHeader
                     title="功能调用日志"
                     description={
-                        `来自 data/activity.log，跨重启保留最近 200 条；本次启动 ${inThisRun} 条` +
+                        `来自 data/activity.log，跨重启保留最近 2000 条；本次启动 ${inThisRun} 条` +
                         (historyCount > 0 ? `，历史 ${historyCount} 条` : '') +
                         (abnormal > 0 ? `，其中失败 / 拒绝 ${abnormal} 条` : '')
                     }
@@ -263,7 +271,7 @@ export function ActivityLogPanel(): React.JSX.Element {
                             <DialogTitle>功能调用日志</DialogTitle>
                             <DialogDescription className="mt-1">
                                 共 {activities.length} 条（本次启动 {inThisRun} 条、历史 {historyCount} 条），
-                                最多保留 200 条，超出后自动轮转 activity.log
+                                最多保留 2000 条，超出后自动轮转 activity.log
                             </DialogDescription>
                         </div>
                         <Button
@@ -311,7 +319,7 @@ export function ActivityLogPanel(): React.JSX.Element {
                             </div>
 
                             {total > PAGE_SIZE ? (
-                                <div className="flex items-center justify-between gap-2 border-t border-line px-5 py-2 text-[11px]">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-2 text-[11px]">
                                     <span className="text-subtle">
                                         第 {safePage + 1} / {totalPages} 页 · 共 {total} 条
                                     </span>
@@ -331,6 +339,23 @@ export function ActivityLogPanel(): React.JSX.Element {
                                             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                                         >
                                             下一页
+                                        </Button>
+                                        <span className="px-1 text-subtle">跳至</span>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={totalPages}
+                                            value={jump}
+                                            onChange={(e) => setJump(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') goJump();
+                                            }}
+                                            className="h-7 w-14 rounded border border-line bg-surface-2 px-1.5 text-center text-[11px] text-ink outline-none focus:border-line-strong"
+                                            placeholder="页码"
+                                            aria-label="跳转到页码"
+                                        />
+                                        <Button size="sm" variant="ghost" onClick={goJump}>
+                                            跳转
                                         </Button>
                                     </div>
                                 </div>

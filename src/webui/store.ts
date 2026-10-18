@@ -86,11 +86,11 @@ interface StoreState {
     lastSavedAt: string | null;
     /** 顶部内联错误条，保存 / 加载失败时常驻，直到用户关闭或重试成功 */
     errorBanner: string | null;
-    /** 最近的错误记录（后端保留 200 条并写入 errors.log） */
+    /** 最近的错误记录（后端保留 2000 条并写入 errors.log） */
     errors: ErrorRecord[];
     /** 后端本次启动的时间戳，用于区分本次 / 历史记录 */
     errorsBootAt: number | null;
-    /** 最近的功能调用记录（后端保留 200 条并写入 activity.log） */
+    /** 最近的功能调用记录（后端保留 2000 条并写入 activity.log） */
     activities: ActivityRecord[];
     /** 调用日志对应的后端启动时间戳 */
     activitiesBootAt: number | null;

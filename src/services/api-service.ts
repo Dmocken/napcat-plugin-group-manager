@@ -621,12 +621,12 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
     /* ---------------- 错误记录 ---------------- */
 
     get('/errors', (req, res) => {
-        const limit = Math.min(Number(req.query?.limit) || 200, 200);
+        const limit = Math.min(Number(req.query?.limit) || 2000, 2000);
         res.json({ code: 0, data: { records: recentErrors(limit), startedAt } });
     });
 
     get('/activity', (req, res) => {
-        const limit = Math.min(Number(req.query?.limit) || 200, 200);
+        const limit = Math.min(Number(req.query?.limit) || 2000, 2000);
         res.json({ code: 0, data: { records: recentActivities(limit), startedAt } });
     });
 
